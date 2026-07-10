@@ -1,0 +1,84 @@
+# ============================================
+# 企业漂绿测算系统 - Git忽略文件
+# ============================================
+
+# ---- Python 编译缓存 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ---- 虚拟环境 ----
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# ---- 环境变量（不提交密钥） ----
+.env
+.env.local
+.env.*.local
+backend/.env
+!backend/.env.example
+!**/.env.example
+
+# ---- IDE / 编辑器 ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# ---- 日志文件 ----
+*.log
+logs/
+*.log.*
+
+# ---- 数据文件 ----
+data/input/
+data/output/*
+!data/output/.gitkeep
+data/raw/
+*.pdf
+*.docx
+*.doc
+*.txt
+!data/sample/*.txt
+
+# ---- 测试覆盖率 ----
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# ---- Streamlit ----
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# ---- 前端构建产物 ----
+frontend/node_modules/
+frontend/dist/
+
+# ---- 数据库文件 ----
+*.db
+*.sqlite
+data/db/
+
+# ---- 临时文件 ----
+tmp/
+temp/
+*.tmp
+*.bak
+*.cache

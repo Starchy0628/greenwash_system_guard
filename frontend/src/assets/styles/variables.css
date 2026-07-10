@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #12201B;
+  --ink-2: #1B2E27;
+  --paper: #EEEEE4;
+  --paper-2: #F7F6EE;
+  --line: rgba(18, 32, 27, 0.12);
+  --line-soft: rgba(238, 238, 228, 0.14);
+  --jade: #2F6F62;
+  --jade-dim: #6E9186;
+  --cinnabar: #A83B2E;
+  --gold: #B08A46;
+  --ink-soft: rgba(18, 32, 27, 0.55);
+  --paper-soft: rgba(238, 238, 228, 0.6);
+  --radius: 3px;
+}

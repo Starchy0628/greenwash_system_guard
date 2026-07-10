@@ -1,0 +1,54 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: 'Noto Sans SC', -apple-system, sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.app {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+/* 动画 */
+@keyframes fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.fade-enter-active {
+  animation: fade .35s ease;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ink-2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--jade-dim);
+  border-radius: 3px;
+}

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>谛观 GreenwashGuard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+  :root{
+    --ink: #12201B;
+    --ink-2: #1B2E27;
+    --paper: #EEEEE4;
+    --paper-2: #F7F6EE;
+    --line: rgba(18,32,27,0.12);
+    --line-soft: rgba(238,238,228,0.14);
+    --jade: #2F6F62;
+    --jade-dim: #6E9186;
+    --cinnabar: #A83B2E;
+    --gold: #B08A46;
+    --ink-soft: rgba(18,32,27,0.55);
+    --paper-soft: rgba(238,238,228,0.6);
+    --radius: 3px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Noto Sans SC', -apple-system, sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--gold);color:var(--ink);}
+  :focus-visible{outline:2px solid var(--gold); outline-offset:2px;}
+
+  .app{max-width:1040px;margin:0 auto;padding:0 24px 80px;}
+
+  header.top{
+    position:sticky;top:0;z-index:20;
+    background:linear-gradient(180deg, var(--ink) 82%, transparent);
+    padding:22px 0 14px;
+    display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:1px solid var(--line-soft);
+    margin-bottom:28px;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .glyph{font-family:'Noto Serif SC';font-weight:900;font-size:22px;color:var(--gold);letter-spacing:2px;}
+  .brand .name{font-family:'Noto Serif SC';font-weight:700;font-size:19px;letter-spacing:1px;}
+  .brand .sub{font-size:11px;color:var(--paper-soft);letter-spacing:2px;margin-left:2px;}
+
+  section.block{margin-bottom:44px;}
+  .block-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap;}
+  .block-head h2{font-family:'Noto Serif SC';font-weight:700;font-size:18px;margin:0;display:flex;align-items:center;gap:10px;}
+  .block-head h2 .idx{color:var(--gold);font-size:13px;font-weight:500;letter-spacing:1px;}
+  .block-head .note{font-size:12px;color:var(--paper-soft);}
+
+  /* ---- 查询区(页面最顶部) ---- */
+  #query-block{margin-bottom:40px;}
+  .search-row{display:flex;gap:8px;margin-bottom:8px;}
+  .search-row input{
+    flex:1;background:var(--paper);color:var(--ink);border:none;border-radius:var(--radius);
+    padding:15px 16px;font-size:15px;font-family:'Noto Sans SC';
+  }
+  .search-row button{
+    background:var(--gold);color:var(--ink);border:none;border-radius:var(--radius);
+    padding:0 22px;font-weight:700;cursor:pointer;font-size:13px;
+  }
+  .search-hint{font-size:11.5px;color:var(--paper-soft);margin-bottom:18px;}
+  .search-hint code{background:var(--ink-2);padding:1px 6px;border-radius:3px;color:var(--gold);}
+
+  .live-panel{
+    background:var(--ink-2);border:1px solid var(--line-soft);border-radius:var(--radius);
+    padding:20px;margin-bottom:20px;display:none;
+  }
+  .live-panel.show{display:block;}
+  .live-step{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:13px;color:var(--paper-soft);opacity:.35;}
+  .live-step.active{opacity:1;color:var(--paper);}
+  .live-step.done{opacity:.7;color:var(--jade-dim);}
+  .live-step .dot{width:8px;height:8px;border-radius:50%;background:var(--paper-soft);flex-shrink:0;}
+  .live-step.active .dot{background:var(--gold);animation:pulse 1s infinite;}
+  .live-step.done .dot{background:var(--jade-dim);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+  .vote-strip{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .vote-chip{font-size:10.5px;background:var(--ink);border:1px solid var(--line-soft);border-radius:10px;padding:2px 8px;color:var(--paper-soft);}
+
+  .result-card{background:var(--paper);color:var(--ink);border-radius:var(--radius);padding:24px;display:none;}
+  .result-card.show{display:block;animation:fade .4s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  .result-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
+  .result-name{font-family:'Noto Serif SC';font-weight:700;font-size:20px;}
+  .result-industry{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .gw-big{font-family:'Noto Serif SC';font-weight:900;font-size:38px;font-variant-numeric:tabular-nums;margin-top:14px;}
+  .gw-big .u{font-size:13px;font-weight:500;color:var(--ink-soft);margin-left:8px;}
+
+  .sent-group{margin-top:22px;}
+  .sent-group h4{font-size:12.5px;letter-spacing:1px;color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px;font-weight:700;}
+  .sent-item{border-top:1px solid var(--line);padding:10px 0;font-size:13.5px;line-height:1.6;cursor:pointer;}
+  .sent-item .tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:8px;margin-right:8px;background:var(--jade);color:#fff;font-weight:600;vertical-align:middle;}
+  .sent-item.dispute .tag{background:var(--cinnabar);}
+  .sent-detail{display:none;margin-top:8px;padding:8px 10px;background:rgba(0,0,0,.04);border-radius:4px;font-size:12px;color:var(--ink-soft);}
+  .sent-item.open .sent-detail{display:block;}
+
+  .trend-wrap{margin-top:22px;}
+  .trend-wrap h4{font-size:12.5px;letter-spacing:1px;color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px;font-weight:700;}
+
+  /* ---- Top10 ---- */
+  .risk-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+  @media(max-width:760px){.risk-grid{grid-template-columns:repeat(2,1fr);}}
+  .risk-card{
+    position:relative;background:var(--paper);color:var(--ink);
+    border-radius:var(--radius);padding:16px 14px 14px;
+    cursor:pointer;transition:transform .2s ease, box-shadow .2s ease;
+  }
+  .risk-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.25);}
+  .risk-card .rank{font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:8px;font-variant-numeric:tabular-nums;}
+  .risk-card .cname{font-family:'Noto Serif SC';font-weight:700;font-size:15px;line-height:1.3;margin-bottom:10px;min-height:39px;}
+  .risk-card .gw{font-family:'Noto Serif SC';font-weight:900;font-size:22px;font-variant-numeric:tabular-nums;}
+  .risk-card .gw-label{font-size:10px;color:var(--ink-soft);letter-spacing:1px;margin-top:2px;}
+  .seal{
+    position:absolute;top:10px;right:10px;
+    width:40px;height:40px;border:2px solid var(--cinnabar);border-radius:6px;
+    color:var(--cinnabar);display:flex;align-items:center;justify-content:center;
+    font-family:'Noto Serif SC';font-weight:900;font-size:12px;letter-spacing:1px;
+    transform:rotate(-8deg);writing-mode:vertical-rl;
+    background:rgba(168,59,46,0.05);line-height:1;
+  }
+
+  /* ---- 关注列表 ---- */
+  .watch-empty{border:1px dashed var(--line-soft);border-radius:var(--radius);padding:22px;text-align:center;color:var(--paper-soft);font-size:13px;}
+  .watch-list{display:flex;flex-direction:column;gap:8px;}
+  .watch-row{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--ink-2);border:1px solid var(--line-soft);border-radius:var(--radius);
+    padding:12px 16px;cursor:pointer;
+  }
+  .watch-row:hover{border-color:var(--jade-dim);}
+  .watch-row .left{display:flex;align-items:center;gap:12px;}
+  .watch-row .star{color:var(--gold);}
+  .watch-row .cname{font-weight:600;font-size:14px;}
+  .watch-row .gw{font-variant-numeric:tabular-nums;font-size:14px;color:var(--paper-soft);}
+
+  /* ---- 分级依据 ---- */
+  .rule-bar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:14px 0 10px;}
+  .rule-bar .seg{height:100%;}
+  .rule-bar .seg.normal{background:var(--jade-dim);flex:8;}
+  .rule-bar .seg.warn{background:var(--cinnabar);flex:2;}
+  .rule-legend{display:flex;justify-content:space-between;font-size:12px;color:var(--paper-soft);}
+  .rule-legend b{color:var(--paper);}
+  .rule-text{font-size:13px;color:var(--paper-soft);line-height:1.7;margin-top:10px;}
+
+  /* ---- 方法说明 ---- */
+  .method-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+  @media(max-width:760px){.method-steps{grid-template-columns:repeat(2,1fr);}}
+  .mstep{background:var(--ink-2);border:1px solid var(--line-soft);border-radius:var(--radius);padding:14px;}
+  .mstep .n{font-family:'Noto Serif SC';color:var(--gold);font-weight:700;font-size:13px;margin-bottom:6px;}
+  .mstep .t{font-size:13px;font-weight:600;margin-bottom:4px;}
+  .mstep .d{font-size:11.5px;color:var(--paper-soft);line-height:1.5;}
+  .metrics{display:flex;gap:24px;flex-wrap:wrap;}
+  .metric .v{font-family:'Noto Serif SC';font-weight:900;font-size:24px;color:var(--gold);font-variant-numeric:tabular-nums;}
+  .metric .l{font-size:11px;color:var(--paper-soft);margin-top:2px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="brand">
+      <span class="glyph">諦</span>
+      <span class="name">谛观 GreenwashGuard</span>
+      <span class="sub">企业漂绿风险监测</span>
+    </div>
+  </header>
+
+  <!-- ============ 查询区(页面最顶部) ============ -->
+  <section id="query-block">
+    <div class="search-row">
+      <input id="search-input" type="text" placeholder="输入股票代码或企业名称，如 贵州茅台 / 600519" />
+      <button id="search-btn">查询</button>
+    </div>
+    <div class="search-hint">已在库企业将直接返回结果；试试输入 <code>示例新能源科技</code> 体验现场实时分析流程</div>
+
+    <div class="live-panel" id="live-panel">
+      <div class="live-step" data-step="0"><div class="dot"></div>抓取企业最新披露文本（ESG报告 / 年报MD&A，就高原则）</div>
+      <div class="live-step" data-step="1"><div class="dot"></div>语句切分与环保相关性过滤</div>
+      <div class="live-step" data-step="2">
+        <div class="dot"></div>三模型独立分类投票中
+        <div class="vote-strip" id="vote-strip" style="display:none;"></div>
+      </div>
+      <div class="live-step" data-step="3"><div class="dot"></div>语境情感打分 + 行业基准修正，合成GW指数</div>
+    </div>
+
+    <div class="result-card" id="result-card"></div>
+  </section>
+
+  <!-- ============ Top10 ============ -->
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="idx">TOP 10</span>当前风险最高企业</h2>
+      <span class="note">按GW指数降序排列</span>
+    </div>
+    <div class="risk-grid" id="top10-grid"></div>
+  </section>
+
+  <!-- ============ 关注列表 ============ -->
+  <section class="block">
+    <div class="block-head"><h2>我的关注列表</h2></div>
+    <div id="watch-area"></div>
+  </section>
+
+  <!-- ============ 分级依据 ============ -->
+  <section class="block">
+    <div class="block-head"><h2>风险分级依据</h2></div>
+    <div class="rule-bar"><div class="seg normal"></div><div class="seg warn"></div></div>
+    <div class="rule-legend"><span><b>正常</b> · 前80%分位</span><span><b>预警</b> · 后20%分位</span></div>
+    <div class="rule-text">
+      全市场企业GW指数按当年分布统一排序，位于风险最高的后20%分位企业标记为「预警」，触发红色印记提示；其余企业均显示为「正常」，不做额外标注。分位阈值随全市场数据分布定期滚动校准，而非固定数值。
+    </div>
+  </section>
+
+  <!-- ============ 方法说明 ============ -->
+  <section class="block">
+    <div class="block-head"><h2>方法说明</h2></div>
+    <div class="method-steps">
+      <div class="mstep"><div class="n">01</div><div class="t">语句切分过滤</div><div class="d">抓取年报MD&A / ESG报告，按句切分，关键词向量库预过滤环保相关语句</div></div>
+      <div class="mstep"><div class="n">02</div><div class="t">三模型集成投票</div><div class="d">DeepSeek-R1、Qwen-3、OpenPangu 独立判别，多数票确权，分歧样本转人工复核</div></div>
+      <div class="mstep"><div class="n">03</div><div class="t">语境情感打分</div><div class="d">对描述性陈述做语境感知情感强度测度，而非简单关键词频次统计</div></div>
+      <div class="mstep"><div class="n">04</div><div class="t">行业基准修正</div><div class="d">语调分数减去行业年度中位数，合成GW指数，剔除行业间披露风格差异</div></div>
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="v">0.84</div><div class="l">Fleiss' Kappa 三模型一致性</div></div>
+      <div class="metric"><div class="v">94.22%</div><div class="l">机判 / 人判 吻合率</div></div>
+      <div class="metric"><div class="v">92万+</div><div class="l">已分析语句数</div></div>
+      <div class="metric"><div class="v">3600+</div><div class="l">覆盖A股上市公司</div></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const COMPANIES = [
+  {code:'600519', name:'贵州茅台', industry:'白酒', gw:0.0013},
+  {code:'000858', name:'五粮液', industry:'白酒', gw:0.018},
+  {code:'300750', name:'宁德时代', industry:'电池', gw:0.037},
+  {code:'002594', name:'比亚迪', industry:'新能源汽车', gw:0.1461},
+  {code:'000002', name:'万科A', industry:'房地产', gw:-0.4194},
+  {code:'600028', name:'中国石化', industry:'能源化工', gw:-0.3621},
+  {code:'601857', name:'中国石油', industry:'能源化工', gw:-0.3701},
+  {code:'600036', name:'招商银行', industry:'银行', gw:0.3244},
+  {code:'601012', name:'隆基绿能', industry:'光伏', gw:-0.5086},
+  {code:'600309', name:'万华化学', industry:'化工', gw:-0.4293},
+  {code:'600048', name:'保利发展', industry:'房地产', gw:0.0746},
+  {code:'000725', name:'京东方A', industry:'电子', gw:-0.4499},
+];
+
+const sentencesBank = {
+  confirmed: [
+    {text:'公司持续加大清洁能源投入力度，全面践行绿色可持续发展理念。', tag:'描述性'},
+    {text:'报告期内单位产值能耗同比下降4.2%，通过ISO14001环境管理体系认证。', tag:'实质性'},
+    {text:'公司高度重视环境保护工作，积极履行企业社会责任。', tag:'描述性'},
+  ],
+  dispute: [
+    {text:'公司在绿色供应链管理方面取得显著成效，相关举措持续深化。', votes:['DeepSeek-R1: 描述性','Qwen-3: 实质性','OpenPangu: 描述性']},
+  ]
+};
+const trendBank = [-0.02, 0.005, 0.018, 0.03, null];
+
+function computeThreshold(list){
+  const sorted = [...list].sort((a,b)=>a.gw-b.gw);
+  const idx = Math.floor(sorted.length*0.8);
+  return sorted[idx].gw;
+}
+const WARN_THRESHOLD = computeThreshold(COMPANIES);
+function riskLevel(gw){ return gw >= WARN_THRESHOLD ? '预警' : '正常'; }
+
+let watchlist = [];
+
+function renderTop10(){
+  const grid = document.getElementById('top10-grid');
+  const top10 = [...COMPANIES].sort((a,b)=>b.gw-a.gw).slice(0,10);
+  grid.innerHTML = top10.map((c,i)=>`
+    <div class="risk-card" data-code="${c.code}">
+      ${riskLevel(c.gw)==='预警' ? '<div class="seal">预警</div>' : ''}
+      <div class="rank">NO.${i+1}</div>
+      <div class="cname">${c.name}</div>
+      <div class="gw">${c.gw.toFixed(4)}</div>
+      <div class="gw-label">GW INDEX</div>
+    </div>
+  `).join('');
+  grid.querySelectorAll('.risk-card').forEach(el=>{
+    el.addEventListener('click', ()=> openCompany(el.dataset.code));
+  });
+}
+
+function renderWatch(){
+  const area = document.getElementById('watch-area');
+  if(watchlist.length===0){
+    area.innerHTML = `<div class="watch-empty">暂无关注 · 查询企业后可添加关注</div>`;
+    return;
+  }
+  area.innerHTML = `<div class="watch-list">` + watchlist.map(code=>{
+    const c = COMPANIES.find(x=>x.code===code);
+    return `<div class="watch-row" data-code="${c.code}">
+      <div class="left"><span class="star">★</span><span class="cname">${c.name}</span></div>
+      <span class="gw">${c.gw.toFixed(4)}</span>
+    </div>`;
+  }).join('') + `</div>`;
+  area.querySelectorAll('.watch-row').forEach(el=>{
+    el.addEventListener('click', ()=> openCompany(el.dataset.code));
+  });
+}
+
+function toggleWatch(code){
+  const i = watchlist.indexOf(code);
+  if(i>=0) watchlist.splice(i,1); else watchlist.push(code);
+  renderWatch();
+}
+
+/* 点击Top10 / 关注列表 -> 回到顶部查询区展开详情 */
+function openCompany(code){
+  const c = COMPANIES.find(x=>x.code===code);
+  document.getElementById('search-input').value = c.name;
+  document.getElementById('live-panel').classList.remove('show');
+  renderResult(c);
+  document.getElementById('query-block').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-input').addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+
+function doSearch(){
+  const q = document.getElementById('search-input').value.trim();
+  const hit = COMPANIES.find(c=>c.name===q || c.code===q || c.name.includes(q));
+  document.getElementById('result-card').classList.remove('show');
+  if(hit){
+    renderResult(hit);
+  } else {
+    runLiveAnalysis(q || '示例新能源科技');
+  }
+}
+
+function renderResult(c){
+  const level = riskLevel(c.gw);
+  const card = document.getElementById('result-card');
+  card.innerHTML = `
+    <div class="result-top">
+      <div>
+        <div class="result-name">${c.name} <span style="font-size:13px;color:var(--ink-soft);font-weight:400;">${c.code}</span></div>
+        <div class="result-industry">所属行业：${c.industry}</div>
+      </div>
+      ${level==='预警' ? '<div class="seal">预警</div>' : ''}
+    </div>
+    <div class="gw-big">${c.gw.toFixed(4)}<span class="u">GW 指数</span></div>
+
+    <div class="sent-group">
+      <h4>已确权语句</h4>
+      ${sentencesBank.confirmed.map(s=>`<div class="sent-item"><span class="tag">${s.tag}</span>${s.text}</div>`).join('')}
+    </div>
+
+    <div class="sent-group">
+      <h4>待人工复核语句（三模型完全分歧）</h4>
+      ${sentencesBank.dispute.map(s=>`
+        <div class="sent-item dispute">
+          <span class="tag">待复核</span>${s.text}
+          <div class="sent-detail">${s.votes.join(' · ')}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="trend-wrap">
+      <h4>历史趋势（近5年）</h4>
+      ${renderTrendSVG(c.gw)}
+    </div>
+
+    <div style="margin-top:20px;">
+      <button id="watch-toggle-btn" style="background:var(--jade);color:#fff;border:none;padding:10px 18px;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;">
+        ${watchlist.includes(c.code) ? '✓ 已加入关注' : '+ 加入关注列表'}
+      </button>
+    </div>
+  `;
+  card.classList.add('show');
+
+  card.querySelectorAll('.sent-item.dispute').forEach(el=>{
+    el.addEventListener('click', ()=> el.classList.toggle('open'));
+  });
+  document.getElementById('watch-toggle-btn').addEventListener('click', ()=>{
+    toggleWatch(c.code);
+    renderResult(c);
+  });
+}
+
+function renderTrendSVG(currentGW){
+  const vals = [...trendBank]; vals[4] = currentGW;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const w=460,h=110,pad=10;
+  const pts = vals.map((v,i)=>{
+    const x = pad + i*((w-2*pad)/(vals.length-1));
+    const y = h-pad - ((v-min)/(max-min || 1))*(h-2*pad);
+    return [x,y];
+  });
+  const path = pts.map((p,i)=> (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  const years = [2021,2022,2023,2024,2025];
+  return `<svg viewBox="0 0 ${w} ${h+20}" style="width:100%;max-width:460px;">
+    <path d="${path}" fill="none" stroke="#A83B2E" stroke-width="2"/>
+    ${pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="#A83B2E"/>`).join('')}
+    ${pts.map((p,i)=>`<text x="${p[0]}" y="${h+16}" font-size="9" fill="#7a7a6e" text-anchor="middle">${years[i]}</text>`).join('')}
+  </svg>`;
+}
+
+function runLiveAnalysis(name){
+  const panel = document.getElementById('live-panel');
+  panel.classList.add('show');
+  document.getElementById('result-card').classList.remove('show');
+  const steps = panel.querySelectorAll('.live-step');
+  steps.forEach(s=>s.classList.remove('active','done'));
+  const voteStrip = document.getElementById('vote-strip');
+  voteStrip.style.display='none'; voteStrip.innerHTML='';
+
+  let i=0;
+  function next(){
+    if(i>0) steps[i-1].classList.remove('active');
+    if(i>0) steps[i-1].classList.add('done');
+    if(i>=steps.length){
+      const fakeGW = (Math.random()*0.6 - 0.3);
+      const fakeCompany = {code:'DEMO', name:name, industry:'（待归类，示例）', gw:fakeGW};
+      setTimeout(()=>{ panel.classList.remove('show'); renderResult(fakeCompany); }, 500);
+      return;
+    }
+    steps[i].classList.add('active');
+    if(i===2){
+      setTimeout(()=>{
+        voteStrip.style.display='flex';
+        ['DeepSeek-R1: 实质性','Qwen-3: 实质性','OpenPangu: 描述性'].forEach((t,idx)=>{
+          setTimeout(()=>{
+            const chip = document.createElement('span');
+            chip.className='vote-chip'; chip.textContent=t;
+            voteStrip.appendChild(chip);
+          }, idx*380);
+        });
+      }, 200);
+    }
+    i++;
+    setTimeout(next, i===3?1600:1400);
+  }
+  next();
+}
+
+renderTop10();
+renderWatch();
+</script>
+</body>
+</html>
