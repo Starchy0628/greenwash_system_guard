@@ -150,7 +150,7 @@ def run_mock_analysis(text: str, industry: str = "白酒") -> dict:
 
     # 5. 行业基准（模拟）
     industry_median = _get_mock_industry_median(industry)
-    gw_index = round(tone_score - industry_median, 6)
+    gw_index = round(max(0.0, tone_score - industry_median), 6)
 
     # 6. Fleiss' Kappa（模拟）
     total = unanimous_count + majority_count + divergence_count

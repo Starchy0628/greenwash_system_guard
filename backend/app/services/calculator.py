@@ -80,8 +80,8 @@ class GreenwashIndexCalculator:
         company_tone: float,
         industry_median: float,
     ) -> float:
-        """GW指数 = 企业环境语调 - 行业年度中位数"""
-        return company_tone - industry_median
+        """GW指数 = 企业环境语调 - 行业年度中位数（下限为0，不可为负值）"""
+        return max(0.0, company_tone - industry_median)
 
     def compute_company_result(
         self,
