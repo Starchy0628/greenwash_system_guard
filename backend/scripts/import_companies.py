@@ -2,19 +2,24 @@
 批量导入 A 股上市公司脚本
 
 功能:
-1. 从本地 CSV 文件批量导入，或使用内置列表
-2. 自动跳过已存在的企业
-3. 自动标记 ST 企业
-4. 剔除金融类企业（银行、非银金融）
-5. 支持指定行业导入
+1. 优先从 akshare 实时拉取全量 A 股公司数据（含申万行业分类）
+2. 数据源不可用时降级到内置 BUILTIN_COMPANIES 列表
+3. 自动跳过已存在的企业（增量更新）
+4. 自动标记 ST / *ST / PT 企业
+5. 剔除金融类企业（银行、非银金融）
+6. 支持从 CSV 文件导入
 
 用法:
-    python scripts/import_companies.py                    # 导入内置列表
-    python scripts/import_companies.py --csv companies.csv  # 从 CSV 导入
-    python scripts/import_companies.py --industry 食品饮料  # 仅导入指定行业
+    python scripts/import_companies.py                    # 从 akshare 导入全量
+    python scripts/import_companies.py --fallback         # 强制使用内置列表
+    python scripts/import_companies.py --csv companies.csv # 从 CSV 导入
+    python scripts/import_companies.py --industry 食品饮料 # 仅导入指定行业
 """
 import sys
 import csv
+import io
+import os
+import time
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -25,8 +30,80 @@ sys.path.insert(0, str(BASE_DIR.parent))
 from app.core.database import SessionLocal, init_db
 from app.models.company import Company, FINANCIAL_INDUSTRIES
 
+
 # ============================================================
-#  内置 A 股上市公司列表（覆盖各申万一级行业，剔除金融类）
+#  CSRC（证监会）→ 申万一级行业 映射表（仅作为降级方案）
+# ============================================================
+CSRC_TO_SHENWAN = {
+    "A 农林牧渔": "农林牧渔",
+    "B 采矿业": "煤炭",
+    "D 水电煤气": "公用事业",
+    "E 建筑业": "建筑装饰",
+    "F 批发零售": "商贸零售",
+    "G 运输仓储": "交通运输",
+    "H 住宿餐饮": "社会服务",
+    "I 信息技术": "计算机",
+    "J 金融业": "银行",
+    "K 房地产": "房地产",
+    "L 商务服务": "社会服务",
+    "M 科研服务": "社会服务",
+    "N 公共环保": "环保",
+    "O 居民服务": "社会服务",
+    "P 教育": "社会服务",
+    "Q 卫生": "医药生物",
+    "R 文化传播": "传媒",
+    "S 综合": "综合",
+}
+
+# ============================================================
+#  申万2021版 一级行业代码映射表
+#  代码来源: 申万研究所 StockClassifyUse_stock.xls
+#  前2位数字 → 一级行业名称
+# ============================================================
+SW_L1_CODE_MAP = {
+    "11": "农林牧渔",
+    "21": "综合",         # 遗留代码（退市股票）
+    "22": "基础化工",
+    "23": "钢铁",
+    "24": "有色金属",
+    "25": "房地产",       # 遗留代码
+    "26": "综合",         # 遗留代码
+    "27": "电子",
+    "28": "汽车",
+    "31": "综合",         # 遗留代码
+    "32": "综合",         # 遗留代码
+    "33": "家用电器",
+    "34": "食品饮料",
+    "35": "纺织服饰",
+    "36": "轻工制造",
+    "37": "医药生物",
+    "41": "公用事业",
+    "42": "交通运输",
+    "43": "房地产",
+    "44": "综合",         # 无股票使用
+    "45": "商贸零售",
+    "46": "社会服务",
+    "47": "计算机",       # 遗留代码
+    "48": "银行",
+    "49": "非银金融",
+    "51": "综合",         # 遗留代码（退市/ST股票）
+    "61": "建筑材料",
+    "62": "建筑装饰",
+    "63": "电力设备",
+    "64": "机械设备",
+    "65": "国防军工",
+    "71": "计算机",
+    "72": "传媒",
+    "73": "通信",
+    "74": "煤炭",
+    "75": "石油石化",
+    "76": "环保",
+    "77": "美容护理",
+}
+
+
+# ============================================================
+#  内置 A 股上市公司列表（akshare 不可用时的降级方案）
 #  ST 企业标记 is_st=True，不会进入分析范围
 # ============================================================
 BUILTIN_COMPANIES = [
@@ -200,8 +277,6 @@ BUILTIN_COMPANIES = [
     ("600160", "巨化股份", "基础化工"),
     ("600409", "三友化工", "基础化工"),
     ("002092", "中泰化学", "基础化工"),
-    ("002648", "卫星化学", "基础化工"),
-    ("600309", "万华化学", "基础化工"),
     ("600141", "兴发集团", "基础化工"),
     ("002250", "联化科技", "基础化工"),
     ("002440", "闰土股份", "基础化工"),
@@ -623,25 +698,207 @@ BUILTIN_COMPANIES = [
 ]
 
 
-def import_companies(csv_path: str = None, industry_filter: str = None, skip_existing: bool = True):
+# ============================================================
+#  申万行业分类获取（从申万研究所 Excel 文件）
+# ============================================================
+
+def _fetch_sw_industry_map() -> dict:
+    """
+    从申万研究所下载 StockClassifyUse_stock.xls，
+    返回 {stock_code: sw_l1_industry_name} 映射。
+    对每个股票取最新更新日期的行业分类。
+    """
+    import urllib3
+    import requests as req
+    import pandas as pd
+    
+    url = "https://www.swsresearch.com/swindex/pdf/SwClass2021/StockClassifyUse_stock.xls"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    
+    try:
+        # 禁用 SSL 验证和代理
+        urllib3.disable_warnings()
+        r = req.get(url, headers=headers, verify=False, timeout=30, proxies={"http": None, "https": None})
+        if r.status_code != 200:
+            print(f"   ⚠️  SW Excel 下载失败: HTTP {r.status_code}")
+            return {}
+    except Exception as e:
+        print(f"   ⚠️  SW Excel 下载异常: {e}")
+        return {}
+    
+    df = pd.read_excel(io.BytesIO(r.content))
+    df["股票代码"] = df["股票代码"].astype(str).str.zfill(6)
+    df["行业代码"] = df["行业代码"].astype(str).str.zfill(6)
+    
+    # 按股票代码分组，取最新更新日期
+    df_sorted = df.sort_values("更新日期", ascending=False)
+    latest = df_sorted.groupby("股票代码").first().reset_index()
+    
+    # 提取一级行业代码（前2位）并映射到行业名称
+    result = {}
+    for _, row in latest.iterrows():
+        code = row["股票代码"]
+        l1_code = row["行业代码"][:2]
+        industry = SW_L1_CODE_MAP.get(l1_code, "综合")
+        result[code] = industry
+    
+    return result
+
+
+# ============================================================
+#  akshare 数据获取
+# ============================================================
+
+def _fetch_from_akshare():
+    """
+    从 akshare 获取全量 A 股上市公司数据。
+    返回: (companies, no_industry_list)
+      companies: list of (stock_code, company_name, industry, is_st)
+      no_industry_list: 行业分类不精确的企业列表
+    
+    策略：
+    1. 从 stock_info_a_code_name() 获取全量股票代码和名称
+    2. 从申万研究所 Excel 获取申万一级行业分类（优先）
+    3. 深交所 CSRC 行业作为降级补充
+    4. 对于仍无法分类的，标记为 "行业未知"
+    """
+    import akshare as ak
+    
+    # 禁用代理
+    os.environ['HTTP_PROXY'] = ''
+    os.environ['HTTPS_PROXY'] = ''
+    
+    print("📡 正在从 akshare 获取全量 A 股数据...")
+    
+    # Step 1: 获取全量股票代码
+    df_all = ak.stock_info_a_code_name()
+    total_codes = len(df_all)
+    print(f"   Step 1: 获取到 {total_codes} 个股票代码")
+    
+    # Step 2: 获取申万行业分类（优先）
+    sw_industry = _fetch_sw_industry_map()
+    print(f"   Step 2: 申万行业分类覆盖 {len(sw_industry)} 只股票")
+    
+    # Step 3: 获取深交所行业分类（降级补充）
+    df_sz = ak.stock_info_sz_name_code(symbol='A股列表')
+    sz_industry = {}
+    for _, row in df_sz.iterrows():
+        code = str(row['A股代码']).strip()
+        industry_raw = str(row.get('所属行业', '')).strip()
+        if industry_raw and industry_raw != 'nan':
+            sz_industry[code] = industry_raw
+    print(f"   Step 3: 深交所 {len(df_sz)} 只股票（CSRC 行业作为降级补充）")
+    
+    # Step 4: 组装最终数据
+    companies = []
+    no_industry = []
+    
+    # 统计各行业来源
+    from_sw = 0
+    from_csrc = 0
+    from_unknown = 0
+    
+    for _, row in df_all.iterrows():
+        code = str(row['code']).strip().zfill(6)
+        name = str(row['name']).strip()
+        
+        # 检测 ST / *ST / PT / 退市
+        is_st = bool(
+            name.startswith('ST') or name.startswith('*ST') or 
+            name.startswith('PT') or '退' in name
+        )
+        
+        # 确定行业分类（优先级：申万研究所 > CSRC 映射 > 行业未知）
+        industry = None
+        
+        # 优先使用申万研究所官方分类
+        if code in sw_industry:
+            industry = sw_industry[code]
+            from_sw += 1
+        
+        # 其次使用 CSRC 映射
+        if industry is None and code in sz_industry:
+            csrc = sz_industry[code]
+            industry = CSRC_TO_SHENWAN.get(csrc)
+            if industry is not None:
+                from_csrc += 1
+            elif csrc.startswith('C '):
+                # "C 制造业" 无法精确映射
+                industry = '制造业'
+                from_csrc += 1
+                no_industry.append((code, name, f"CSRC: {csrc}"))
+        
+        if industry is None:
+            industry = '行业未知'
+            from_unknown += 1
+            no_industry.append((code, name, '无数据源'))
+        
+        companies.append((code, name, industry, is_st))
+    
+    print(f"   Step 4: 组装完成，共 {len(companies)} 家企业")
+    print(f"      行业来源: 申万={from_sw}, CSRC={from_csrc}, 未知={from_unknown}")
+    if no_industry:
+        print(f"   ⚠️  有 {len(no_industry)} 家企业行业分类不精确/缺失，需要人工补充")
+    
+    return companies, no_industry
+
+
+def _is_st_stock(name: str) -> bool:
+    """检测是否为 ST / *ST / PT / 退市 股票"""
+    return bool(
+        name.startswith('ST') or name.startswith('*ST') or 
+        name.startswith('PT') or '退' in name
+    )
+
+
+# ============================================================
+#  导入主逻辑
+# ============================================================
+
+def import_companies(
+    csv_path: str = None,
+    industry_filter: str = None,
+    skip_existing: bool = True,
+    use_fallback: bool = False,
+):
     """批量导入企业"""
     init_db()
     db = SessionLocal()
 
+    no_industry_list = []
+
     if csv_path:
-        # 从 CSV 文件导入
         companies = _load_from_csv(csv_path)
-    else:
-        # 使用内置列表
+        print(f"📄 从 CSV 加载: {len(companies)} 家企业")
+    elif use_fallback:
         companies = BUILTIN_COMPANIES
+        print(f"📋 使用内置列表: {len(companies)} 家企业")
+    else:
+        try:
+            companies, no_industry_list = _fetch_from_akshare()
+            print(f"✅ akshare 数据获取成功")
+        except Exception as e:
+            print(f"⚠️  akshare 获取失败: {e}")
+            print("📋 降级到内置列表...")
+            companies = BUILTIN_COMPANIES
+            print(f"   内置列表: {len(companies)} 家企业")
 
     if industry_filter:
         companies = [c for c in companies if len(c) >= 3 and c[2] == industry_filter]
+        print(f"🔍 行业筛选 '{industry_filter}': {len(companies)} 家企业")
 
-    # 过滤金融类
+    # ---- 统计原始数据 ----
+    total_before_filter = len(companies)
+    st_in_input = sum(1 for c in companies if len(c) >= 4 and c[3])
+    financial_in_input = sum(
+        1 for c in companies if len(c) >= 3 and c[2] in FINANCIAL_INDUSTRIES
+    )
+
+    # ---- 过滤金融类 ----
     companies = [c for c in companies if len(c) >= 3 and c[2] not in FINANCIAL_INDUSTRIES]
+    print(f"🚫 剔除金融类: {financial_in_input} 家 → 剩余 {len(companies)} 家")
 
-    # 去重（按股票代码，保留第一个）
+    # ---- 去重（按股票代码，保留第一个） ----
     seen_codes = set()
     deduped = []
     for c in companies:
@@ -649,21 +906,29 @@ def import_companies(csv_path: str = None, industry_filter: str = None, skip_exi
         if code not in seen_codes:
             seen_codes.add(code)
             deduped.append(c)
+    dup_count = len(companies) - len(deduped)
     companies = deduped
+    if dup_count > 0:
+        print(f"🔧 去重: {dup_count} 家重复 → 剩余 {len(companies)} 家")
 
+    # ---- 数据库操作 ----
     existing_codes = {c.stock_code for c in db.query(Company).all()}
     new_count = 0
     skipped = 0
     st_count = 0
+    inserted_codes = set()
 
     for comp in companies:
         code = comp[0]
         name = comp[1]
-        industry = comp[2]
+        industry = comp[2] if len(comp) >= 3 else "行业未知"
         is_st = len(comp) >= 4 and comp[3]
 
         if skip_existing and code in existing_codes:
             skipped += 1
+            continue
+
+        if code in inserted_codes:
             continue
 
         company = Company(
@@ -677,20 +942,65 @@ def import_companies(csv_path: str = None, industry_filter: str = None, skip_exi
             is_active=not is_st,
         )
         db.add(company)
+        inserted_codes.add(code)
         new_count += 1
         if is_st:
             st_count += 1
 
     db.commit()
     total = db.query(Company).count()
+    
+    # 统计各行业数量
+    from sqlalchemy import func
+    industry_counts = (
+        db.query(Company.industry, func.count(Company.id))
+        .group_by(Company.industry)
+        .order_by(func.count(Company.id).desc())
+        .all()
+    )
+    
     db.close()
 
-    print(f"✅ 导入完成！")
-    print(f"   新增: {new_count} 家")
-    print(f"   跳过: {skipped} 家（已存在）")
-    print(f"   其中 ST: {st_count} 家（标记为不活跃，不会进入分析）")
-    print(f"   数据库总计: {total} 家")
-    print(f"   涵盖行业: {len(set(c[2] for c in companies if len(c) >= 3))} 个")
+    # ---- 打印报告 ----
+    print()
+    print("=" * 60)
+    print("📊 导入结果报告")
+    print("=" * 60)
+    print(f"  数据来源: {'akshare 实时' if not csv_path and not use_fallback else 'CSV' if csv_path else '内置列表'}")
+    print(f"  原始总数: {total_before_filter}")
+    print(f"  其中 ST: {st_in_input}")
+    print(f"  其中金融: {financial_in_input}")
+    print(f"  新增: {new_count} 家")
+    print(f"  跳过: {skipped} 家（已存在）")
+    print(f"  其中 ST: {st_count} 家（标记为不活跃，不会进入分析）")
+    print(f"  数据库总计: {total} 家")
+    print(f"  涵盖行业: {len(industry_counts)} 个")
+    print()
+    print("  行业分布 (Top 15):")
+    for ind, cnt in industry_counts[:15]:
+        print(f"    {ind}: {cnt} 家")
+    print()
+
+    # 剔除 ST 和金融类后的统计
+    active_count = total - sum(
+        1 for c in db.query(Company).filter(
+            (Company.is_st == True) | (Company.industry.in_(FINANCIAL_INDUSTRIES))
+        ).all()
+    )
+    db.close()
+    print(f"  剔除 ST 和金融类后: {active_count} 家")
+
+    # 行业缺失企业
+    if no_industry_list:
+        print()
+        print(f"⚠️  行业分类不精确的企业 ({len(no_industry_list)} 家，需人工补充):")
+        for code, name, reason in no_industry_list[:20]:
+            print(f"    {code} {name} [{reason}]")
+        if len(no_industry_list) > 20:
+            print(f"    ... 共 {len(no_industry_list)} 家，仅显示前20")
+
+    print()
+    print("✅ 导入完成！")
 
 
 def _load_from_csv(path: str) -> list:
@@ -716,10 +1026,12 @@ if __name__ == "__main__":
     parser.add_argument("--csv", type=str, help="CSV 文件路径")
     parser.add_argument("--industry", type=str, help="仅导入指定行业")
     parser.add_argument("--force", action="store_true", help="强制覆盖已存在的企业")
+    parser.add_argument("--fallback", action="store_true", help="强制使用内置列表（跳过 akshare）")
     args = parser.parse_args()
 
     import_companies(
         csv_path=args.csv,
         industry_filter=args.industry,
         skip_existing=not args.force,
+        use_fallback=args.fallback,
     )

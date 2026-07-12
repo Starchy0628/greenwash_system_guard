@@ -78,6 +78,9 @@ frontend/dist/
 *.sqlite
 data/db/
 
+# ---- 批量分析进度 ----
+*_progress*.txt
+
 # ---- 临时文件 ----
 tmp/
 temp/
