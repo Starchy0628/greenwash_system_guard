@@ -2,13 +2,15 @@
 PDF 上传分析 API — 接收 PDF 文件，解析文本，执行分析，SSE 流式返回结果
 """
 import json
+import asyncio
 from datetime import datetime
 from typing import AsyncGenerator
 from fastapi import APIRouter, UploadFile, File, Form, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.services.pdf_parser import extract_text_from_pdf, infer_report_type, infer_company_from_text
+from app.core.config import get_settings
+from app.services.pdf_parser import parse_report_full, get_analysis_text
 from app.services.text_utils import split_sentences, filter_env_sentences
 from app.services.mock_service import run_mock_analysis
 from app.services.industry_service import compute_industry_benchmarks, update_risk_levels
@@ -88,17 +90,19 @@ async def _analyze_pdf_stream(
         "message": "正在解析 PDF 文件，提取文本内容...",
     })
 
-    text, error = extract_text_from_pdf(file_bytes, file.filename)
-    if error:
+    parsed = parse_report_full(file_bytes, file.filename)
+    if not parsed.full_text:
         yield sse("analysis_error", {
             "phase": "parsing",
-            "message": error,
+            "message": "PDF 解析失败，无法提取文本内容。请确认文件为文本型 PDF（非扫描图片）。",
             "retryable": False,
         })
         return
 
-    report_type = infer_report_type(text, file.filename)
-    company_name = infer_company_from_text(text, file.filename)
+    text = get_analysis_text(parsed)
+    report_type = parsed.report_type
+    company_name = parsed.company_name
+    key_indicators = parsed.key_indicators
 
     yield sse("status", {
         "phase": "parsed",
@@ -139,9 +143,19 @@ async def _analyze_pdf_stream(
         "done": 0,
     })
 
-    # 使用 Mock 服务（演示模式）
-    industry = "综合"  # PDF 上传时无法自动确定行业，默认为综合
-    result = run_mock_analysis(text, industry)
+    # PDF 上传时无法自动确定行业，默认为综合
+    industry = "综合"
+    settings = get_settings()
+
+    if settings.app_mode == "real":
+        # 真实模式
+        from app.services.analysis_orchestrator import AnalysisOrchestrator
+        result = await AnalysisOrchestrator._run_real_classification(
+            env_sentences, industry, db
+        )
+    else:
+        # Mock 模式
+        result = run_mock_analysis(text, industry)
 
     yield sse("progress", {
         "phase": "classifying",
@@ -226,7 +240,7 @@ async def _analyze_pdf_stream(
             sentence_order=s["sentence_order"],
             deepseek_result=s["deepseek_result"],
             qwen_result=s["qwen_result"],
-            pangu_result=s["pangu_result"],
+            glm_result=s["glm_result"],
             final_category=s["final_category"],
             vote_type=s["vote_type"],
             confidence=s["confidence"],
@@ -269,7 +283,7 @@ async def _analyze_pdf_stream(
                 "sentence_order": s["sentence_order"],
                 "deepseek_result": s["deepseek_result"],
                 "qwen_result": s["qwen_result"],
-                "pangu_result": s["pangu_result"],
+                "glm_result": s["glm_result"],
                 "final_category": s["final_category"],
                 "vote_type": s["vote_type"],
                 "confidence": s["confidence"],
@@ -281,10 +295,17 @@ async def _analyze_pdf_stream(
     }
 
     # 分离已确权和待复核
-    confirmed = [s for s in final_result["sentences"] if not s["needs_review"]]
+    # 已确权：仅包含 final_category == "substantive" 且 needs_review == False
+    # 待复核：所有 needs_review == True（不考虑其分类结果）
+    # descriptive 和 non_environmental 不在任何清单中展示
+    confirmed = [
+        s for s in final_result["sentences"]
+        if not s["needs_review"] and s["final_category"] == "substantive"
+    ]
     disputed = [s for s in final_result["sentences"] if s["needs_review"]]
     final_result["confirmed_sentences"] = confirmed
     final_result["dispute_sentences"] = disputed
+    final_result["key_indicators"] = key_indicators
 
     yield sse("result", {
         "cached": False,

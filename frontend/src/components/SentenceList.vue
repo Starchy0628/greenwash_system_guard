@@ -15,7 +15,7 @@
         <div class="sent-detail" v-if="s._open">
           <div>DeepSeek-R1: {{ s.deepseek_result }}</div>
           <div>Qwen-3: {{ s.qwen_result }}</div>
-          <div>OpenPangu: {{ s.pangu_result }}</div>
+          <div>GLM-OCR: {{ s.glm_result }}</div>
           <div v-if="s.sentiment_score !== null && s.sentiment_score !== undefined">情感评分: {{ s.sentiment_score?.toFixed(2) }}</div>
         </div>
       </div>

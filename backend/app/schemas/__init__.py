@@ -66,7 +66,7 @@ class SentenceResponse(BaseModel):
     sentence_order: int | None = None
     deepseek_result: str | None = None
     qwen_result: str | None = None
-    pangu_result: str | None = None
+    glm_result: str | None = None
     final_category: str | None = None
     vote_type: str | None = None
     confidence: float | None = None

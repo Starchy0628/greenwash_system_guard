@@ -10,7 +10,7 @@
       <div class="mstep">
         <div class="n">02</div>
         <div class="t">三模型集成投票</div>
-        <div class="d">DeepSeek-R1、Qwen-3、OpenPangu 独立判别，多数票确权，分歧样本转人工复核</div>
+        <div class="d">DeepSeek-R1、Qwen-3、GLM-OCR 独立判别，多数票确权，分歧样本转人工复核</div>
       </div>
       <div class="mstep">
         <div class="n">03</div>

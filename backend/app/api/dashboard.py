@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
-from app.models.company import Company
+from app.models.company import Company, FINANCIAL_INDUSTRIES
 from app.models.analysis import AnalysisRecord
 from app.models.sentence import Sentence
 from app.schemas import DashboardMetrics, RiskThresholdInfo
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 @router.get("/top10", response_model=list[dict])
 def get_top10_risk(db: Session = Depends(get_db)):
-    """获取GW指数最高的10家企业"""
+    """获取GW指数最高的10家企业（剔除金融类、ST类、数据缺失）"""
     records = (
         db.query(AnalysisRecord)
         .join(Company)
@@ -22,6 +22,8 @@ def get_top10_risk(db: Session = Depends(get_db)):
             AnalysisRecord.is_latest == True,
             AnalysisRecord.gw_index.isnot(None),
             AnalysisRecord.analysis_status == "completed",
+            Company.is_st == False,
+            Company.industry.notin_(FINANCIAL_INDUSTRIES),
         )
         .order_by(AnalysisRecord.gw_index.desc())
         .limit(10)
@@ -44,8 +46,16 @@ def get_top10_risk(db: Session = Depends(get_db)):
 
 @router.get("/metrics", response_model=DashboardMetrics)
 def get_metrics(db: Session = Depends(get_db)):
-    """获取仪表盘关键指标"""
-    total_companies = db.query(func.count(Company.id)).filter(Company.is_active == True).scalar() or 0
+    """获取仪表盘关键指标（剔除金融类、ST类企业）"""
+    total_companies = (
+        db.query(func.count(Company.id))
+        .filter(
+            Company.is_active == True,
+            Company.is_st == False,
+            Company.industry.notin_(FINANCIAL_INDUSTRIES),
+        )
+        .scalar()
+    ) or 0
     total_sentences = db.query(func.count(Sentence.id)).scalar() or 0
     current_year = 2024
 
@@ -60,16 +70,19 @@ def get_metrics(db: Session = Depends(get_db)):
 
 @router.get("/risk-threshold", response_model=RiskThresholdInfo)
 def get_risk_threshold(db: Session = Depends(get_db)):
-    """获取当前预警阈值详情"""
+    """获取当前预警阈值详情（剔除金融类、ST类企业）"""
     current_year = 2024
     threshold = get_warn_threshold(db, current_year)
 
     records = (
         db.query(AnalysisRecord)
+        .join(Company, AnalysisRecord.company_id == Company.id)
         .filter(
             AnalysisRecord.is_latest == True,
             AnalysisRecord.gw_index.isnot(None),
             AnalysisRecord.analysis_status == "completed",
+            Company.is_st == False,
+            Company.industry.notin_(FINANCIAL_INDUSTRIES),
         )
         .all()
     )

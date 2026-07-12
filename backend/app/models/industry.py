@@ -12,6 +12,8 @@ class IndustryBenchmark(Base):
     industry: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    real_sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    used_seed_data: Mapped[bool] = mapped_column(Integer, default=1)  # 1=True, 0=False
     tone_median: Mapped[float | None] = mapped_column(Float, nullable=True)
     tone_mean: Mapped[float | None] = mapped_column(Float, nullable=True)
     tone_std: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -224,7 +224,7 @@
     <div class="block-head"><h2>方法说明</h2></div>
     <div class="method-steps">
       <div class="mstep"><div class="n">01</div><div class="t">语句切分过滤</div><div class="d">抓取年报MD&A / ESG报告，按句切分，关键词向量库预过滤环保相关语句</div></div>
-      <div class="mstep"><div class="n">02</div><div class="t">三模型集成投票</div><div class="d">DeepSeek-R1、Qwen-3、OpenPangu 独立判别，多数票确权，分歧样本转人工复核</div></div>
+      <div class="mstep"><div class="n">02</div><div class="t">三模型集成投票</div><div class="d">DeepSeek-R1、Qwen-3、GLM-OCR 独立判别，多数票确权，分歧样本转人工复核</div></div>
       <div class="mstep"><div class="n">03</div><div class="t">语境情感打分</div><div class="d">对描述性陈述做语境感知情感强度测度，而非简单关键词频次统计</div></div>
       <div class="mstep"><div class="n">04</div><div class="t">行业基准修正</div><div class="d">语调分数减去行业年度中位数，合成GW指数，剔除行业间披露风格差异</div></div>
     </div>
@@ -261,7 +261,7 @@ const sentencesBank = {
     {text:'公司高度重视环境保护工作，积极履行企业社会责任。', tag:'描述性'},
   ],
   dispute: [
-    {text:'公司在绿色供应链管理方面取得显著成效，相关举措持续深化。', votes:['DeepSeek-R1: 描述性','Qwen-3: 实质性','OpenPangu: 描述性']},
+    {text:'公司在绿色供应链管理方面取得显著成效，相关举措持续深化。', votes:['DeepSeek-R1: 描述性','Qwen-3: 实质性','GLM-OCR: 描述性']},
   ]
 };
 const trendBank = [-0.02, 0.005, 0.018, 0.03, null];
@@ -431,7 +431,7 @@ function runLiveAnalysis(name){
     if(i===2){
       setTimeout(()=>{
         voteStrip.style.display='flex';
-        ['DeepSeek-R1: 实质性','Qwen-3: 实质性','OpenPangu: 描述性'].forEach((t,idx)=>{
+        ['DeepSeek-R1: 实质性','Qwen-3: 实质性','GLM-OCR: 描述性'].forEach((t,idx)=>{
           setTimeout(()=>{
             const chip = document.createElement('span');
             chip.className='vote-chip'; chip.textContent=t;

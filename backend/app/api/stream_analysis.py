@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.models.company import Company
+from app.models.company import Company, FINANCIAL_INDUSTRIES
 from app.services.analysis_orchestrator import AnalysisOrchestrator
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -35,6 +35,16 @@ async def stream_analysis(
         async def not_found():
             yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"未找到该企业，请确认股票代码或名称是否正确\",\"retryable\":false}}\n\n"
         return StreamingResponse(not_found(), media_type="text/event-stream")
+
+    # 拒绝金融类、ST类企业
+    if company.industry in FINANCIAL_INDUSTRIES:
+        async def financial_error():
+            yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"金融类上市公司不在分析范围内\",\"retryable\":false}}\n\n"
+        return StreamingResponse(financial_error(), media_type="text/event-stream")
+    if company.is_st:
+        async def st_error():
+            yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"ST/*ST/PT 类公司不在分析范围内\",\"retryable\":false}}\n\n"
+        return StreamingResponse(st_error(), media_type="text/event-stream")
 
     if not company.is_active:
         async def inactive():

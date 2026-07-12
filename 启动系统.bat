@@ -1,4 +1,9 @@
 @echo off
+REM ============================================================
+REM  谛观 GreenwashGuard — 一键启动脚本
+REM  功能：同时启动后端 FastAPI 和前端 Vite 开发服务器
+REM ============================================================
+
 chcp 65001 >nul
 title 谛观 GreenwashGuard — 一键启动
 
@@ -15,11 +20,11 @@ echo.
 cd /d "%~dp0"
 
 echo  [1/2] 启动后端 API 服务...
-start "GreenwashGuard-Backend" cmd /c "cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+start "GreenwashGuard-Backend" cmd /k "cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 echo         后端已启动 (端口 8000)
 
 echo  [2/2] 启动前端开发服务器...
-start "GreenwashGuard-Frontend" cmd /c "cd frontend && npx vite --host"
+start "GreenwashGuard-Frontend" cmd /k "cd frontend && npx vite --host"
 echo         前端已启动 (端口 5173)
 
 echo.

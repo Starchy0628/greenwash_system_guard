@@ -8,7 +8,7 @@
 
 ## 摘 要
 
-本系统针对企业环境信息披露中的"漂绿"现象，构建了一套基于异构大语言模型（Heterogeneous LLM）集成推理的自动化测算系统。系统采用三模型（DeepSeek-R1-32B、Qwen-3-32B、OpenPangu-Pro-MoE-72B）独立判别 + 多数投票确权 + 集成平均评分的技术路线，实现对企业年报中环境披露内容的深度语义分析。
+本系统针对企业环境信息披露中的"漂绿"现象，构建了一套基于异构大语言模型（Heterogeneous LLM）集成推理的自动化测算系统。系统采用三模型（DeepSeek-R1-32B、Qwen-3-32B、GLM-OCR）独立判别 + 多数投票确权 + 集成平均评分的技术路线，实现对企业年报中环境披露内容的深度语义分析。
 
 系统提供可视化Web交互界面，支持PDF/DOCX/TXT多格式年报上传、单企业分析、批量对比、行业基准分析等功能，界面采用森林绿主题设计，符合WCAG AA级无障碍标准。
 
@@ -203,7 +203,7 @@
 |----------|----------|----------|------|------|
 | **DeepSeek-R1-32B** | Decoder-Only | 32B | 推理专家 | 推理能力强，逻辑严谨，适合分类任务的精确判断 |
 | **Qwen-3-32B** | Decoder-Only | 32B | 中文专家 | 中文理解优秀，综合能力强，适合语义细腻的情感分析 |
-| **OpenPangu-Pro-MoE-72B** | MoE混合专家 | 72B（激活~39B） | 知识专家 | 知识广博，多领域适应性好，适合识别多样化的环保表述 |
+| **GLM-OCR** | MoE混合专家 | 72B（激活~39B） | 知识专家 | 知识广博，多领域适应性好，适合识别多样化的环保表述 |
 
 **异构性价值**：
 - 架构差异（Decoder-only vs MoE）→ 不同的推理模式
@@ -393,7 +393,7 @@ pdfminer.six（兼容性最强）
 |------|------|-----------|-----------|
 | 单模型A | DeepSeek-R1-32B | ~82% | - |
 | 单模型B | Qwen-3-32B | ~80% | - |
-| 单模型C | OpenPangu-Pro-MoE-72B | ~85% | - |
+| 单模型C | GLM-OCR | ~85% | - |
 | 三模型集成 | 多数投票 | **~91%** | Fleiss' Kappa = 0.84 |
 
 **验证方法**：在人工标注的测试集上分别计算各方案的准确率、精确率、召回率、F1值。
@@ -855,7 +855,7 @@ streamlit run app.py
 3. 支持的模型：
    - DeepSeek-R1-32B
    - Qwen-3-32B
-   - OpenPangu-Pro-MoE-72B
+   - GLM-OCR
 
 ### 10.3 快速上手指南
 
@@ -889,7 +889,7 @@ streamlit run app.py
 | 选取MD&A章节作为基础语料池 | 支持全文档输入，关键词筛选环境语句 | `data_cleaning/`, `utils/text_utils.py` |
 | 正则表达式切分为原子级单句 | `split_sentences()` 中文标点切分 | `utils/text_utils.py` |
 | 扩展关键词向量库筛选 | 五大维度关键词 + `filter_env_sentences()` | `config/settings.py` |
-| 三个异构LLM组成专家评审系统 | DeepSeek-R1-32B / Qwen-3-32B / OpenPangu-Pro-MoE-72B | `config/settings.py`, `llm_classification/` |
+| 三个异构LLM组成专家评审系统 | DeepSeek-R1-32B / Qwen-3-32B / GLM-OCR | `config/settings.py`, `llm_classification/` |
 | 零样本思维链（Zero-shot CoT） | `CLASSIFICATION_PROMPT` 包含推理要求 | `config/settings.py` |
 | 多数投票原则确权 | `MajorityVotingFuser` 多数投票引擎 | `model_fusion/fusion_engine.py` |
 | 2:1票型直接采纳 | 多数通过逻辑 + 置信度 2/3 | `model_fusion/fusion_engine.py` |

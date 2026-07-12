@@ -106,9 +106,10 @@ class BaseLLMClient(ABC):
 class OpenAICompatibleClient(BaseLLMClient):
     """OpenAI 兼容接口客户端"""
 
-    def __init__(self, model_config: Dict, api_key: str = None):
+    def __init__(self, model_config: Dict, api_key: str = None, fallback_model_id: str = None):
         super().__init__(model_config)
         self.api_key = api_key or model_config.get("api_key", "")
+        self.fallback_model_id = fallback_model_id
 
     def call(self, prompt: str, system_prompt: str = None, **kwargs) -> LLMResponse:
         return self._retry_call(self._call_impl, prompt, system_prompt, **kwargs)
@@ -123,38 +124,45 @@ class OpenAICompatibleClient(BaseLLMClient):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        payload = {
-            "model": self.model_id,
-            "messages": messages,
-            "temperature": kwargs.get("temperature", 0.1),
-            "max_tokens": kwargs.get("max_tokens", 2048),
-        }
+        def _do_request(model_id: str) -> LLMResponse:
+            payload = {
+                "model": model_id,
+                "messages": messages,
+                "temperature": kwargs.get("temperature", 0.1),
+                "max_tokens": kwargs.get("max_tokens", 2048),
+            }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            response = requests.post(
+                f"{self.api_base}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=120,
+            )
+            response.raise_for_status()
+            data = response.json()
+            latency = time.time() - start_time
+            content = data["choices"][0]["message"]["content"]
+            tokens_used = data.get("usage", {}).get("total_tokens", 0)
+            return LLMResponse(
+                model_name=self.name,
+                raw_response=content,
+                success=True,
+                latency=latency,
+                tokens_used=tokens_used,
+            )
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        response = requests.post(
-            f"{self.api_base}/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=120,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        latency = time.time() - start_time
-        content = data["choices"][0]["message"]["content"]
-        tokens_used = data.get("usage", {}).get("total_tokens", 0)
-
-        return LLMResponse(
-            model_name=self.name,
-            raw_response=content,
-            success=True,
-            latency=latency,
-            tokens_used=tokens_used,
-        )
+        try:
+            return _do_request(self.model_id)
+        except Exception as primary_error:
+            if self.fallback_model_id and self.fallback_model_id != self.model_id:
+                try:
+                    return _do_request(self.fallback_model_id)
+                except Exception:
+                    pass
+            raise primary_error
 
 
 class MockLLMClient(BaseLLMClient):
@@ -240,16 +248,18 @@ class MockLLMClient(BaseLLMClient):
         return max(-1.0, min(1.0, score))
 
 
-def create_llm_client(model_config: Dict, api_keys: Dict = None, use_mock: bool = True) -> BaseLLMClient:
+def create_llm_client(model_config: Dict, api_keys: Dict = None, use_mock: bool = True, fallback_model_ids: Dict = None) -> BaseLLMClient:
     """工厂方法：创建 LLM 客户端"""
     api_keys = api_keys or {}
+    fallback_model_ids = fallback_model_ids or {}
     model_name = model_config.get("name", "")
 
     if use_mock:
         return MockLLMClient(model_config)
 
     api_key = api_keys.get(model_name, "")
-    return OpenAICompatibleClient(model_config, api_key=api_key)
+    fallback = fallback_model_ids.get(model_name)
+    return OpenAICompatibleClient(model_config, api_key=api_key, fallback_model_id=fallback)
 
 
 # ============================================================
@@ -257,25 +267,25 @@ def create_llm_client(model_config: Dict, api_keys: Dict = None, use_mock: bool 
 # ============================================================
 DEFAULT_LLM_MODELS = [
     {
-        "name": "deepseek-r1-32b",
-        "display_name": "DeepSeek-R1-32B",
+        "name": "deepseek-r1",
+        "display_name": "DeepSeek-R1",
         "type": "decoder_only",
         "api_base": "https://api.deepseek.com/v1",
         "model_id": "deepseek-reasoner",
     },
     {
-        "name": "qwen-3-32b",
-        "display_name": "Qwen-3-32B",
+        "name": "qwen-max",
+        "display_name": "Qwen-Max",
         "type": "decoder_only",
         "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model_id": "qwen-max",
     },
     {
-        "name": "openpangu-pro-moe-72b",
-        "display_name": "OpenPangu-Pro-MoE-72B",
-        "type": "moe",
+        "name": "glm-ocr",
+        "display_name": "GLM-OCR",
+        "type": "decoder_only",
         "api_base": "https://open.bigmodel.cn/api/paas/v4",
-        "model_id": "glm-4-plus",
+        "model_id": "glm-ocr",
     },
 ]
 

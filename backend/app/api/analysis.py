@@ -6,7 +6,7 @@ import random
 
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.models.company import Company
+from app.models.company import Company, FINANCIAL_INDUSTRIES
 from app.models.analysis import AnalysisRecord
 from app.models.sentence import Sentence
 from app.schemas import AnalysisRecordResponse, SentenceResponse, AnalysisQuery
@@ -48,6 +48,12 @@ def query_or_analyze(
 
     if not company:
         raise HTTPException(status_code=404, detail="未找到该企业，请先确认企业信息")
+
+    # 拒绝金融类、ST类企业
+    if company.industry in FINANCIAL_INDUSTRIES:
+        raise HTTPException(status_code=400, detail="金融类上市公司不在分析范围内")
+    if company.is_st:
+        raise HTTPException(status_code=400, detail="ST/*ST/PT 类公司不在分析范围内")
 
     # 查找已有分析记录
     existing = (
@@ -164,7 +170,7 @@ def get_analysis_sentences(
             "sentence_order": s.sentence_order,
             "deepseek_result": s.deepseek_result,
             "qwen_result": s.qwen_result,
-            "pangu_result": s.pangu_result,
+            "glm_result": s.glm_result,
             "final_category": s.final_category,
             "vote_type": s.vote_type,
             "confidence": s.confidence,
@@ -207,7 +213,7 @@ def _analysis_to_dict(record: AnalysisRecord, include_sentences: bool = False) -
                 "sentence_order": s.sentence_order,
                 "deepseek_result": s.deepseek_result,
                 "qwen_result": s.qwen_result,
-                "pangu_result": s.pangu_result,
+                "glm_result": s.glm_result,
                 "final_category": s.final_category,
                 "vote_type": s.vote_type,
                 "confidence": s.confidence,
@@ -279,7 +285,7 @@ def _run_analysis_flow(analysis_id: str, company: Company, db_session: Session):
                 sentence_order=s["sentence_order"],
                 deepseek_result=s["deepseek_result"],
                 qwen_result=s["qwen_result"],
-                pangu_result=s["pangu_result"],
+                glm_result=s["glm_result"],
                 final_category=s["final_category"],
                 vote_type=s["vote_type"],
                 confidence=s["confidence"],

@@ -35,24 +35,24 @@ def mock_classify_sentence(sentence: str) -> Tuple[str, str, str, dict]:
     """模拟三模型对一条语句的分类"""
     is_env = any(kw in sentence for kw in ALL_ENV_KEYWORDS[:20])
     if not is_env:
-        results = {"deepseek": "non_env", "qwen": "non_env", "pangu": "non_env"}
+        results = {"deepseek": "non_env", "qwen": "non_env", "glm": "non_env"}
         return "non_env", "unanimous", 1.0, results
 
     vote = random.choice(["substantive", "descriptive"])
     confusion = random.random()
 
     if confusion < 0.85:  # 85%全票通过
-        results = {"deepseek": vote, "qwen": vote, "pangu": vote}
+        results = {"deepseek": vote, "qwen": vote, "glm": vote}
         return vote, "unanimous", 1.0, results
     elif confusion < 0.97:  # 12%多数通过
         alt = "descriptive" if vote == "substantive" else "substantive"
-        results = {"deepseek": vote, "qwen": vote, "pangu": alt}
+        results = {"deepseek": vote, "qwen": vote, "glm": alt}
         return vote, "majority", 0.67, results
     else:  # 3%完全分歧
         results = {
             "deepseek": "substantive",
             "qwen": "descriptive",
-            "pangu": "non_env",
+            "glm": "non_env",
         }
         return "dispute", "full_divergence", 0.33, results
 
@@ -132,7 +132,7 @@ def run_mock_analysis(text: str, industry: str = "白酒") -> dict:
             "sentence_order": i + 1,
             "deepseek_result": model_results["deepseek"],
             "qwen_result": model_results["qwen"],
-            "pangu_result": model_results["pangu"],
+            "glm_result": model_results["glm"],
             "final_category": category,
             "vote_type": vote_type,
             "confidence": confidence,

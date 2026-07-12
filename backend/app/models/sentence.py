@@ -18,8 +18,8 @@ class Sentence(Base):
     deepseek_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     qwen_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
     qwen_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
-    pangu_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    pangu_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    glm_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    glm_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_category: Mapped[str | None] = mapped_column(String(20), index=True, nullable=True)
     vote_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # unanimous/majority/full_divergence
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)

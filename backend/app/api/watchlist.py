@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.models.company import Company
+from app.models.company import Company, FINANCIAL_INDUSTRIES
 from app.models.watchlist import Watchlist
 from app.models.analysis import AnalysisRecord
 
@@ -11,13 +11,17 @@ router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
 @router.get("")
 def get_watchlist(db: Session = Depends(get_db)):
-    """获取关注列表"""
+    """获取关注列表（剔除金融类、ST类企业）"""
     items = (
         db.query(Watchlist, Company, AnalysisRecord)
         .join(Company, Watchlist.company_id == Company.id)
         .outerjoin(
             AnalysisRecord,
             (AnalysisRecord.company_id == Company.id) & (AnalysisRecord.is_latest == True),
+        )
+        .filter(
+            Company.is_st == False,
+            Company.industry.notin_(FINANCIAL_INDUSTRIES),
         )
         .order_by(Watchlist.added_at.desc())
         .all()
@@ -43,6 +47,12 @@ def add_to_watchlist(stock_code: str, db: Session = Depends(get_db)):
     company = db.query(Company).filter(Company.stock_code == stock_code).first()
     if not company:
         raise HTTPException(status_code=404, detail="企业不存在")
+
+    # 拒绝金融类、ST类企业
+    if company.industry in FINANCIAL_INDUSTRIES:
+        raise HTTPException(status_code=400, detail="金融类上市公司不在关注范围内")
+    if company.is_st:
+        raise HTTPException(status_code=400, detail="ST/*ST/PT 类公司不在关注范围内")
 
     existing = db.query(Watchlist).filter(Watchlist.company_id == company.id).first()
     if existing:

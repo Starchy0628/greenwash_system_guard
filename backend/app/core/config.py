@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     qwen_model: str = "qwen-max"
 
-    openpangu_api_key: str = ""
-    openpangu_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    openpangu_model: str = "glm-4-plus"
+    glm_api_key: str = ""
+    glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    glm_model: str = "glm-ocr"
+    glm_fallback_model: str = "glm-4.7"
 
     # 前端地址（CORS）
     frontend_url: str = "http://localhost:5173"

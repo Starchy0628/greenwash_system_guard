@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from app.core.database import get_db
-from app.models.company import Company
+from app.models.company import Company, FINANCIAL_INDUSTRIES
 from app.models.analysis import AnalysisRecord
 from app.schemas import CompanyResponse, CompanySearchResult, SearchQuery
 
@@ -15,7 +15,7 @@ def search_companies(
     q: str = Query("", description="搜索关键词（名称或代码）"),
     db: Session = Depends(get_db),
 ):
-    """搜索企业"""
+    """搜索企业（自动剔除金融类、ST类、数据缺失企业）"""
     if not q:
         return []
 
@@ -23,6 +23,8 @@ def search_companies(
         db.query(Company)
         .filter(
             Company.is_active == True,
+            Company.is_st == False,
+            Company.industry.notin_(FINANCIAL_INDUSTRIES),
             or_(
                 Company.company_name.contains(q),
                 Company.stock_code.contains(q),
