@@ -281,11 +281,11 @@ DEFAULT_LLM_MODELS = [
         "model_id": "qwen-max",
     },
     {
-        "name": "glm-ocr",
-        "display_name": "GLM-OCR",
+        "name": "glm-4.7",
+        "display_name": "GLM-4.7",
         "type": "decoder_only",
         "api_base": "https://open.bigmodel.cn/api/paas/v4",
-        "model_id": "glm-ocr",
+        "model_id": "glm-4.7",
     },
 ]
 

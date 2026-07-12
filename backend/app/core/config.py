@@ -27,8 +27,7 @@ class Settings(BaseSettings):
 
     glm_api_key: str = ""
     glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    glm_model: str = "glm-ocr"
-    glm_fallback_model: str = "glm-4.7"
+    glm_model: str = "glm-4.7"
 
     # 前端地址（CORS）
     frontend_url: str = "http://localhost:5173"
