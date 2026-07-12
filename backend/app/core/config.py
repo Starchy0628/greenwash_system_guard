@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     # 数据库
     database_url: str = "sqlite:///./data/db/greenwash_guard.db"
+    # PostgreSQL 专用配置（仅在 database_url 为 postgresql:// 时生效）
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_password: str = ""  # 用于日志脱敏
 
     # API 配置
     api_host: str = "0.0.0.0"

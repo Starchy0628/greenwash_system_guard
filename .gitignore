@@ -77,6 +77,7 @@ frontend/dist/
 *.db
 *.sqlite
 data/db/
+data/pgdata/
 
 # ---- 批量分析进度 ----
 *_progress*.txt
