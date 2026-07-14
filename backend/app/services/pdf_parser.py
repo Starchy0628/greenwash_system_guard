@@ -1,10 +1,10 @@
 """
-PDF 解析服务 — 提取年报/ESG报告的文本内容
+PDF 解析服务 — 提取年报文本内容
 
 支持:
 - 直接文本提取（PyPDF2 / pdfplumber）
 - 表格提取并转自然语言描述（方案 A）
-- MD&A / ESG 章节定位
+- MD&A 章节定位
 - 关键环境指标提取（方案 D）
 - 降级处理：无法解析时返回错误提示
 """
@@ -19,10 +19,9 @@ class ParsedReport:
     """解析后的报告内容"""
     full_text: str = ""
     mda_text: str = ""  # 管理层讨论与分析章节
-    esg_text: str = ""  # ESG / 环境相关章节
     table_sentences: List[str] = field(default_factory=list)  # 表格转自然语言的句子
     key_indicators: List[Dict[str, Any]] = field(default_factory=list)  # 关键环境指标
-    report_type: str = "年报"  # 年报 / ESG
+    report_type: str = "MD&A"  # 年报
     company_name: str = ""
 
 
@@ -89,23 +88,8 @@ def extract_text_from_pdf(file_bytes: bytes, filename: str = "") -> Tuple[str, O
 
 
 def infer_report_type(text: str, filename: str = "") -> str:
-    """推断报告类型"""
-    text_lower = text.lower()
-    name_lower = filename.lower()
-
-    # ESG 报告
-    esg_keywords = ["esg", "环境、社会及管治", "环境、社会及治理", "可持续发展报告", "社会责任报告"]
-    for kw in esg_keywords:
-        if kw in text_lower[:500] or kw in name_lower:
-            return "ESG"
-
-    # 年报
-    annual_keywords = ["年度报告", "年报", "annual report", "董事会报告", "管理层讨论与分析", "md&a"]
-    for kw in annual_keywords:
-        if kw in text_lower[:500] or kw in name_lower:
-            return "年报"
-
-    return "年报"  # 默认
+    """推断报告类型（仅年报）"""
+    return "MD&A"
 
 
 def infer_company_from_text(text: str, filename: str = "") -> Optional[str]:
@@ -265,51 +249,6 @@ def extract_mda_section(text: str) -> str:
     return section if len(section) > 200 else ""
 
 
-def extract_esg_section(text: str) -> str:
-    """
-    从报告中提取 ESG / 环境 / 社会责任相关章节
-    """
-    start_patterns = [
-        r"(?:第[一二三四五六七八九十]+节\s*)?环境、社会及管治",
-        r"(?:第[一二三四五六七八九十]+节\s*)?环境、社会及治理",
-        r"(?:第[一二三四五六七八九十]+节\s*)?ESG",
-        r"(?:第[一二三四五六七八九十]+节\s*)?社会责任",
-        r"(?:第[一二三四五六七八九十]+节\s*)?环境与社会",
-        r"(?:第[一二三四五六七八九十]+节\s*)?可持续发展",
-        r"(?:第[一二三四五六七八九十]+节\s*)?环境保护",
-    ]
-
-    end_patterns = [
-        r"(?:第[一二三四五六七八九十]+节\s*)?公司治理",
-        r"(?:第[一二三四五六七八九十]+节\s*)?重要事项",
-        r"(?:第[一二三四五六七八九十]+节\s*)?财务报告",
-        r"(?:第[一二三四五六七八九十]+节\s*)?审计报告",
-        r"(?:第[一二三四五六七八九十]+节\s*)?股份变动",
-    ]
-
-    start_pos = -1
-    for pat in start_patterns:
-        m = re.search(pat, text[:80000])
-        if m:
-            start_pos = m.start()
-            break
-
-    if start_pos < 0:
-        return ""
-
-    search_end = min(start_pos + 150000, len(text))
-    end_pos = len(text)
-    for pat in end_patterns:
-        m = re.search(pat, text[start_pos:search_end])
-        if m:
-            pos = start_pos + m.start()
-            if pos < end_pos and pos > start_pos + 500:
-                end_pos = pos
-
-    section = text[start_pos:end_pos].strip()
-    return section if len(section) > 200 else ""
-
-
 # ============================================================
 #  关键环境指标提取（方案 D）
 # ============================================================
@@ -385,7 +324,7 @@ def parse_report_full(file_bytes: bytes, filename: str = "") -> ParsedReport:
     完整解析 PDF 报告
 
     Returns:
-        ParsedReport 对象，包含全文、MD&A、ESG章节、表格句子、关键指标
+        ParsedReport 对象，包含全文、MD&A、表格句子、关键指标
     """
     result = ParsedReport()
 
@@ -405,17 +344,14 @@ def parse_report_full(file_bytes: bytes, filename: str = "") -> ParsedReport:
     # 4. 提取 MD&A 章节
     result.mda_text = extract_mda_section(text)
 
-    # 5. 提取 ESG 章节
-    result.esg_text = extract_esg_section(text)
-
-    # 6. 提取表格并转句子
+    # 5. 提取表格并转句子
     try:
         tables = extract_tables_from_pdf(file_bytes)
         result.table_sentences = tables_to_sentences(tables)
     except Exception:
         result.table_sentences = []
 
-    # 7. 提取关键环境指标
+    # 6. 提取关键环境指标
     try:
         result.key_indicators = extract_key_env_indicators(text, result.table_sentences)
     except Exception:
@@ -426,18 +362,14 @@ def parse_report_full(file_bytes: bytes, filename: str = "") -> ParsedReport:
 
 def get_analysis_text(parsed: ParsedReport) -> str:
     """
-    获取用于分析的文本（MD&A + ESG章节 + 表格句子）
+    获取用于分析的文本（MD&A 章节 + 表格句子）
 
     优先顺序：
-    1. ESG报告的环境章节（如有）
-    2. 年报的 MD&A 章节（如有）
-    3. 全文
+    1. 年报的 MD&A 章节（如有）
+    2. 全文
     再加上表格转成的自然语言句子
     """
     parts = []
-
-    if parsed.esg_text and len(parsed.esg_text) > 500:
-        parts.append(parsed.esg_text)
 
     if parsed.mda_text and len(parsed.mda_text) > 500:
         parts.append(parsed.mda_text)

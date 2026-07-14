@@ -1,16 +1,128 @@
 """
 LLM 模型客户端模块
 支持 OpenAI 兼容接口 + 本地 Mock 模式
+增强：指数退避重试、令牌桶限流、熔断降级
 """
 import re
 import time
+import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from collections import deque
 
 from app.core.config import get_settings
+from app.core.logging_setup import llm_metrics
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+class TokenBucketRateLimiter:
+    """令牌桶限流器 — 控制 LLM API 调用频率"""
+
+    def __init__(self, rate: float = 10.0, capacity: int = 20):
+        """
+        Args:
+            rate: 每秒生成令牌数（QPS）
+            capacity: 桶容量（最大突发请求数）
+        """
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = float(capacity)
+        self.last_refill = time.time()
+        self._lock = threading.Lock()
+
+    def acquire(self, tokens: int = 1, timeout: float = 30.0) -> bool:
+        """获取令牌，阻塞直到获取成功或超时"""
+        start = time.time()
+        while True:
+            with self._lock:
+                self._refill()
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    return True
+            if time.time() - start > timeout:
+                return False
+            time.sleep(0.1)
+
+    def try_acquire(self, tokens: int = 1) -> bool:
+        """非阻塞获取令牌"""
+        with self._lock:
+            self._refill()
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return True
+            return False
+
+    def _refill(self):
+        now = time.time()
+        elapsed = now - self.last_refill
+        self.tokens = min(
+            self.capacity,
+            self.tokens + elapsed * self.rate
+        )
+        self.last_refill = now
+
+
+class CircuitBreaker:
+    """熔断器 — 连续失败后自动熔断，避免无效调用"""
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0):
+        """
+        Args:
+            failure_threshold: 连续失败次数阈值
+            recovery_timeout: 熔断后恢复等待时间（秒）
+        """
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.state = self.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = 0.0
+        self._lock = threading.Lock()
+
+    def can_execute(self) -> bool:
+        """检查是否可以执行请求"""
+        with self._lock:
+            if self.state == self.CLOSED:
+                return True
+            elif self.state == self.OPEN:
+                if time.time() - self.last_failure_time > self.recovery_timeout:
+                    self.state = self.HALF_OPEN
+                    return True
+                return False
+            else:
+                return False
+
+    def record_success(self):
+        """记录成功调用"""
+        with self._lock:
+            if self.state == self.HALF_OPEN:
+                self.state = self.CLOSED
+            self.failure_count = 0
+
+    def record_failure(self):
+        """记录失败调用"""
+        with self._lock:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.failure_count >= self.failure_threshold:
+                if self.state != self.OPEN:
+                    logger.warning(
+                        f"熔断器触发：连续失败 {self.failure_count} 次，"
+                        f"进入熔断状态，{self.recovery_timeout}秒后恢复"
+                    )
+                self.state = self.OPEN
+
+    @property
+    def current_state(self) -> str:
+        with self._lock:
+            return self.state
 
 
 @dataclass
@@ -25,6 +137,34 @@ class LLMResponse:
     tokens_used: int = 0
 
 
+_rate_limiters: Dict[str, TokenBucketRateLimiter] = {}
+_circuit_breakers: Dict[str, CircuitBreaker] = {}
+_rl_lock = threading.Lock()
+
+
+def _get_rate_limiter(model_name: str) -> TokenBucketRateLimiter:
+    """获取模型对应的限流器（单例）"""
+    with _rl_lock:
+        if model_name not in _rate_limiters:
+            rate = settings.llm_rate_limit if hasattr(settings, 'llm_rate_limit') else 10.0
+            capacity = settings.llm_rate_capacity if hasattr(settings, 'llm_rate_capacity') else 20
+            _rate_limiters[model_name] = TokenBucketRateLimiter(rate=rate, capacity=capacity)
+        return _rate_limiters[model_name]
+
+
+def _get_circuit_breaker(model_name: str) -> CircuitBreaker:
+    """获取模型对应的熔断器（单例）"""
+    with _rl_lock:
+        if model_name not in _circuit_breakers:
+            threshold = settings.llm_circuit_threshold if hasattr(settings, 'llm_circuit_threshold') else 5
+            timeout = settings.llm_circuit_timeout if hasattr(settings, 'llm_circuit_timeout') else 60.0
+            _circuit_breakers[model_name] = CircuitBreaker(
+                failure_threshold=threshold,
+                recovery_timeout=timeout,
+            )
+        return _circuit_breakers[model_name]
+
+
 class BaseLLMClient(ABC):
     """LLM 客户端基类"""
 
@@ -36,6 +176,9 @@ class BaseLLMClient(ABC):
         self.model_id = model_config.get("model_id", "")
         self.max_retries = 3
         self.retry_delay = 2.0
+        self.retry_backoff = 2.0
+        self.rate_limiter = _get_rate_limiter(self.name)
+        self.circuit_breaker = _get_circuit_breaker(self.name)
 
     @abstractmethod
     def call(self, prompt: str, system_prompt: str = None, **kwargs) -> LLMResponse:
@@ -84,23 +227,99 @@ class BaseLLMClient(ABC):
 
         return 0.0
 
-    def _retry_call(self, func, *args, **kwargs) -> LLMResponse:
-        """带重试的调用"""
-        last_error = ""
-        for attempt in range(self.max_retries):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_error = str(e)
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay * (attempt + 1))
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """判断错误是否可重试"""
+        error_str = str(error).lower()
+        retryable_keywords = [
+            "timeout", "timed out", "connection", "network",
+            "rate limit", "429", "503", "502", "504",
+            "too many requests", "server error", "unavailable",
+            "重置", "连接", "超时", "限流", "繁忙",
+        ]
+        return any(kw in error_str for kw in retryable_keywords)
 
-        return LLMResponse(
-            model_name=self.name,
-            raw_response="",
-            success=False,
-            error=last_error,
-        )
+    def _retry_call(self, func, *args, **kwargs) -> LLMResponse:
+        """带指数退避重试 + 限流 + 熔断的调用"""
+        last_error = ""
+
+        if not self.circuit_breaker.can_execute():
+            logger.warning(f"[{self.name}] 熔断器已打开，跳过调用")
+            llm_metrics.record_call(
+                model_name=self.name,
+                success=False,
+                latency=0.0,
+                tokens=0,
+            )
+            return LLMResponse(
+                model_name=self.name,
+                raw_response="",
+                success=False,
+                error="circuit_breaker_open",
+            )
+
+        if not self.rate_limiter.acquire(timeout=10.0):
+            logger.warning(f"[{self.name}] 获取限流令牌超时")
+            llm_metrics.record_call(
+                model_name=self.name,
+                success=False,
+                latency=0.0,
+                tokens=0,
+            )
+            return LLMResponse(
+                model_name=self.name,
+                raw_response="",
+                success=False,
+                error="rate_limit_timeout",
+            )
+
+        try:
+            for attempt in range(self.max_retries):
+                try:
+                    response = func(*args, **kwargs)
+                    if response.success:
+                        self.circuit_breaker.record_success()
+                        logger.debug(
+                            f"[{self.name}] 调用成功 latency={response.latency:.3f}s "
+                            f"tokens={response.tokens_used}"
+                        )
+                    else:
+                        self.circuit_breaker.record_failure()
+                    llm_metrics.record_call(
+                        model_name=self.name,
+                        success=response.success,
+                        latency=response.latency,
+                        tokens=response.tokens_used,
+                    )
+                    return response
+                except Exception as e:
+                    last_error = str(e)
+                    is_retryable = self._is_retryable_error(e)
+
+                    if attempt < self.max_retries - 1 and is_retryable:
+                        delay = self.retry_delay * (self.retry_backoff ** attempt)
+                        logger.warning(
+                            f"[{self.name}] 第{attempt+1}次调用失败，{delay:.1f}s后重试: {e}"
+                        )
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"[{self.name}] 调用失败（不可重试或已达最大重试次数）: {e}")
+                        break
+
+            self.circuit_breaker.record_failure()
+            llm_metrics.record_call(
+                model_name=self.name,
+                success=False,
+                latency=0.0,
+                tokens=0,
+            )
+            return LLMResponse(
+                model_name=self.name,
+                raw_response="",
+                success=False,
+                error=last_error,
+            )
+        finally:
+            pass
 
 
 class OpenAICompatibleClient(BaseLLMClient):

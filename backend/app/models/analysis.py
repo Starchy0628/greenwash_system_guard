@@ -11,7 +11,7 @@ class AnalysisRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     company_id: Mapped[int] = mapped_column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
-    data_source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # ESG / MDA
+    data_source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # MDA
     source_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     total_sentences: Mapped[int] = mapped_column(Integer, default=0)
     env_sentences: Mapped[int] = mapped_column(Integer, default=0)

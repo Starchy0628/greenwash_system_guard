@@ -2,6 +2,7 @@
 语句分类器 — 基于异构大语言模型的环境语句分类
 将环境语句划分为：实质性陈述、描述性陈述、非环保语句
 """
+import asyncio
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
@@ -50,7 +51,7 @@ class SentenceClassifier:
     def classify_single(
         self, sentence: str, return_details: bool = False
     ) -> SentenceClassificationResult:
-        """对单条语句进行分类"""
+        """对单条语句进行分类（同步串行）"""
         result = SentenceClassificationResult(sentence=sentence)
 
         for model_name, client in self.clients.items():
@@ -74,15 +75,62 @@ class SentenceClassifier:
         self._determine_final_label(result)
         return result
 
+    async def classify_single_async(
+        self, sentence: str, return_details: bool = False
+    ) -> SentenceClassificationResult:
+        """对单条语句进行分类（三模型并行调用）"""
+        result = SentenceClassificationResult(sentence=sentence)
+        prompt = CLASSIFICATION_PROMPT.format(sentence=sentence)
+
+        async def _call_model(model_name: str, client: BaseLLMClient):
+            try:
+                response = await asyncio.to_thread(client.call, prompt)
+                if response.success:
+                    label = client._parse_classification(response.raw_response)
+                    response.parsed_result = label
+                    return model_name, label, response if return_details else None
+                else:
+                    return model_name, ClassificationType.DESCRIPTIVE, None
+            except Exception:
+                return model_name, ClassificationType.DESCRIPTIVE, None
+
+        tasks = [
+            _call_model(name, client)
+            for name, client in self.clients.items()
+        ]
+        results = await asyncio.gather(*tasks)
+
+        for model_name, label, response in results:
+            result.model_results[model_name] = label
+            if return_details and response:
+                result.model_responses[model_name] = response
+
+        self._determine_final_label(result)
+        return result
+
     def classify_batch(
         self, sentences: List[str], return_details: bool = False
     ) -> List[SentenceClassificationResult]:
-        """批量分类"""
+        """批量分类（同步串行）"""
         results = []
         for sent in sentences:
             result = self.classify_single(sent, return_details=return_details)
             results.append(result)
         return results
+
+    async def classify_batch_async(
+        self, sentences: List[str], return_details: bool = False, max_concurrency: int = 3
+    ) -> List[SentenceClassificationResult]:
+        """批量分类（异步并发，控制并发度）"""
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _classify_one(sent: str):
+            async with semaphore:
+                return await self.classify_single_async(sent, return_details=return_details)
+
+        tasks = [_classify_one(sent) for sent in sentences]
+        results = await asyncio.gather(*tasks)
+        return list(results)
 
     def _determine_final_label(self, result: SentenceClassificationResult):
         """多数投票确权"""

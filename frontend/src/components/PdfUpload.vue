@@ -18,7 +18,7 @@
 
       <div v-if="!file" class="upload-placeholder">
         <div class="upload-icon">📄</div>
-        <div class="upload-title">上传企业年报/ESG报告 PDF</div>
+        <div class="upload-title">上传企业年报 PDF</div>
         <div class="upload-desc">
           拖拽文件到此处，或
           <button class="browse-btn" @click="$refs.fileInput.click()">点击选择文件</button>

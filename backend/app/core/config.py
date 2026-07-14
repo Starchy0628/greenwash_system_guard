@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     glm_model: str = "glm-4.7"
 
+    # LLM 调用保护
+    llm_rate_limit: float = 10.0
+    llm_rate_capacity: int = 20
+    llm_circuit_threshold: int = 5
+    llm_circuit_timeout: float = 60.0
+    llm_max_retries: int = 3
+    llm_retry_delay: float = 2.0
+
     # 前端地址（CORS）
     frontend_url: str = "http://localhost:5173"
 

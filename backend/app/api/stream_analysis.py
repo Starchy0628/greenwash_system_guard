@@ -34,21 +34,25 @@ async def stream_analysis(
         # 流式返回未找到错误
         async def not_found():
             yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"未找到该企业，请确认股票代码或名称是否正确\",\"retryable\":false}}\n\n"
+            yield f"event: done\ndata: {{\"status\":\"error\"}}\n\n"
         return StreamingResponse(not_found(), media_type="text/event-stream")
 
     # 拒绝金融类、ST类企业
     if company.industry in FINANCIAL_INDUSTRIES:
         async def financial_error():
             yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"金融类上市公司不在分析范围内\",\"retryable\":false}}\n\n"
+            yield f"event: done\ndata: {{\"status\":\"error\"}}\n\n"
         return StreamingResponse(financial_error(), media_type="text/event-stream")
     if company.is_st:
         async def st_error():
             yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"ST/*ST/PT 类公司不在分析范围内\",\"retryable\":false}}\n\n"
+            yield f"event: done\ndata: {{\"status\":\"error\"}}\n\n"
         return StreamingResponse(st_error(), media_type="text/event-stream")
 
     if not company.is_active:
         async def inactive():
             yield f"event: analysis_error\ndata: {{\"phase\":\"not_found\",\"message\":\"该企业已不活跃，请核对信息\",\"retryable\":false}}\n\n"
+            yield f"event: done\ndata: {{\"status\":\"error\"}}\n\n"
         return StreamingResponse(inactive(), media_type="text/event-stream")
 
     return StreamingResponse(
@@ -57,5 +61,6 @@ async def stream_analysis(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )

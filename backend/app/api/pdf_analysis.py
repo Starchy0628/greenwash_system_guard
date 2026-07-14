@@ -55,6 +55,7 @@ async def _analyze_pdf_stream(
             "message": "仅支持 PDF 格式文件，请上传 .pdf 文件",
             "retryable": False,
         })
+        yield sse("done", {"status": "error"})
         return
 
     # 读取文件内容
@@ -66,6 +67,7 @@ async def _analyze_pdf_stream(
             "message": f"文件读取失败：{str(e)}",
             "retryable": False,
         })
+        yield sse("done", {"status": "error"})
         return
 
     if len(file_bytes) > 50 * 1024 * 1024:  # 50MB 限制
@@ -74,6 +76,7 @@ async def _analyze_pdf_stream(
             "message": "文件过大（超过50MB），请压缩后重试",
             "retryable": False,
         })
+        yield sse("done", {"status": "error"})
         return
 
     if len(file_bytes) < 100:
@@ -82,6 +85,7 @@ async def _analyze_pdf_stream(
             "message": "文件内容为空或过小，请检查文件",
             "retryable": False,
         })
+        yield sse("done", {"status": "error"})
         return
 
     # 阶段 1: 解析 PDF
@@ -97,6 +101,7 @@ async def _analyze_pdf_stream(
             "message": "PDF 解析失败，无法提取文本内容。请确认文件为文本型 PDF（非扫描图片）。",
             "retryable": False,
         })
+        yield sse("done", {"status": "error"})
         return
 
     text = get_analysis_text(parsed)
@@ -131,6 +136,7 @@ async def _analyze_pdf_stream(
             "message": "未找到任何含环境关键词的语句，请确认报告内容包含环境相关信息",
             "retryable": True,
         })
+        yield sse("done", {"status": "error"})
         return
 
     total_sentences = len(raw_sentences)
@@ -213,7 +219,7 @@ async def _analyze_pdf_stream(
     record = AnalysisRecord(
         company_id=company.id,
         year=current_year,
-        data_source_type=report_type,
+        data_source_type="MD&A",
         source_file_name=file.filename,
         total_sentences=total_sentences,
         env_sentences=total,
@@ -311,6 +317,8 @@ async def _analyze_pdf_stream(
         "cached": False,
         "result": final_result,
     })
+
+    yield sse("done", {"status": "success"})
 
 
 def sse(event_type: str, data: dict) -> str:

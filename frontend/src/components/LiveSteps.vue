@@ -18,7 +18,7 @@ const props = defineProps({
   steps: {
     type: Array,
     default: () => [
-      '抓取企业最新披露文本（ESG报告 / 年报MD&A，就高原则）',
+      '抓取企业最新年报MD&A章节',
       '语句切分与环保相关性过滤',
       '三模型独立分类投票中',
       '语境情感打分 + 行业基准修正，合成GW指数',

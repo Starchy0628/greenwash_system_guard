@@ -182,7 +182,7 @@
     <div class="search-hint">已在库企业将直接返回结果；试试输入 <code>示例新能源科技</code> 体验现场实时分析流程</div>
 
     <div class="live-panel" id="live-panel">
-      <div class="live-step" data-step="0"><div class="dot"></div>抓取企业最新披露文本（ESG报告 / 年报MD&A，就高原则）</div>
+      <div class="live-step" data-step="0"><div class="dot"></div>抓取企业最新年报MD&A章节</div>
       <div class="live-step" data-step="1"><div class="dot"></div>语句切分与环保相关性过滤</div>
       <div class="live-step" data-step="2">
         <div class="dot"></div>三模型独立分类投票中
@@ -223,7 +223,7 @@
   <section class="block">
     <div class="block-head"><h2>方法说明</h2></div>
     <div class="method-steps">
-      <div class="mstep"><div class="n">01</div><div class="t">语句切分过滤</div><div class="d">抓取年报MD&A / ESG报告，按句切分，关键词向量库预过滤环保相关语句</div></div>
+      <div class="mstep"><div class="n">01</div><div class="t">语句切分过滤</div><div class="d">抓取年报MD&A章节，按句切分，关键词向量库预过滤环保相关语句</div></div>
       <div class="mstep"><div class="n">02</div><div class="t">三模型集成投票</div><div class="d">DeepSeek-R1、Qwen-3、GLM-OCR 独立判别，多数票确权，分歧样本转人工复核</div></div>
       <div class="mstep"><div class="n">03</div><div class="t">语境情感打分</div><div class="d">对描述性陈述做语境感知情感强度测度，而非简单关键词频次统计</div></div>
       <div class="mstep"><div class="n">04</div><div class="t">行业基准修正</div><div class="d">语调分数减去行业年度中位数，合成GW指数，剔除行业间披露风格差异</div></div>

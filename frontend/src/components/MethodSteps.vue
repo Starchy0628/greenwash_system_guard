@@ -5,7 +5,7 @@
       <div class="mstep">
         <div class="n">01</div>
         <div class="t">语句切分过滤</div>
-        <div class="d">抓取年报MD&A / ESG报告，按句切分，关键词预过滤环保相关语句</div>
+        <div class="d">抓取年报MD&A章节，按句切分，关键词预过滤环保相关语句</div>
       </div>
       <div class="mstep">
         <div class="n">02</div>
@@ -20,7 +20,7 @@
       <div class="mstep">
         <div class="n">04</div>
         <div class="t">行业基准修正</div>
-        <div class="d">语调分数减去行业年度中位数，合成GW指数，剔除行业间披露风格差异</div>
+        <div class="d">语调分数减去行业年度中位数，合成GW指数，剔除行业间披露风格差异。行业样本量不足30家时结果标注"参考"，建议审慎解读。</div>
       </div>
     </div>
     <div class="metrics">

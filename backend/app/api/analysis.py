@@ -233,7 +233,7 @@ def _run_analysis_flow(analysis_id: str, company: Company, db_session: Session):
     try:
         # 阶段1: 抓取文本
         _analysis_progress[analysis_id].update({"step": 0, "status": "running", "message": "抓取企业最新披露文本"})
-        text = MOCK_REPORT_TEXT  # 实际应抓取年报/ESG报告
+        text = MOCK_REPORT_TEXT  # 实际应抓取年报MD&A
 
         # 阶段2: 语句切分与过滤
         _analysis_progress[analysis_id].update({"step": 1, "status": "running", "message": "语句切分与环保相关性过滤"})
@@ -258,7 +258,7 @@ def _run_analysis_flow(analysis_id: str, company: Company, db_session: Session):
         record = AnalysisRecord(
             company_id=company.id,
             year=current_year,
-            data_source_type="ESG",
+            data_source_type="MD&A",
             total_sentences=result["total_sentences"],
             env_sentences=result["env_sentences"],
             substantive_count=result["substantive_count"],

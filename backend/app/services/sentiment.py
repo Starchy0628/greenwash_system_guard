@@ -2,6 +2,7 @@
 语境感知情感计算模块
 基于句内语义依存的情感评分，输出[-1,1]区间连续值
 """
+import asyncio
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
@@ -48,7 +49,7 @@ class SentimentAnalyzer:
     def analyze_single(
         self, sentence: str, return_details: bool = False
     ) -> SentimentResult:
-        """对单条语句进行情感分析"""
+        """对单条语句进行情感分析（同步串行）"""
         result = SentimentResult(sentence=sentence)
 
         for model_name, client in self.clients.items():
@@ -72,15 +73,62 @@ class SentimentAnalyzer:
         self._calculate_final_score(result)
         return result
 
+    async def analyze_single_async(
+        self, sentence: str, return_details: bool = False
+    ) -> SentimentResult:
+        """对单条语句进行情感分析（三模型并行调用）"""
+        result = SentimentResult(sentence=sentence)
+        prompt = SENTIMENT_PROMPT.format(sentence=sentence)
+
+        async def _call_model(model_name: str, client: BaseLLMClient):
+            try:
+                response = await asyncio.to_thread(client.call, prompt)
+                if response.success:
+                    score = client._parse_sentiment(response.raw_response)
+                    response.parsed_result = score
+                    return model_name, score, response if return_details else None
+                else:
+                    return model_name, 0.0, None
+            except Exception:
+                return model_name, 0.0, None
+
+        tasks = [
+            _call_model(name, client)
+            for name, client in self.clients.items()
+        ]
+        results = await asyncio.gather(*tasks)
+
+        for model_name, score, response in results:
+            result.model_scores[model_name] = score
+            if return_details and response:
+                result.model_responses[model_name] = response
+
+        self._calculate_final_score(result)
+        return result
+
     def analyze_batch(
         self, sentences: List[str], return_details: bool = False
     ) -> List[SentimentResult]:
-        """批量情感分析"""
+        """批量情感分析（同步串行）"""
         results = []
         for sent in sentences:
             result = self.analyze_single(sent, return_details=return_details)
             results.append(result)
         return results
+
+    async def analyze_batch_async(
+        self, sentences: List[str], return_details: bool = False, max_concurrency: int = 3
+    ) -> List[SentimentResult]:
+        """批量情感分析（异步并发，控制并发度）"""
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _analyze_one(sent: str):
+            async with semaphore:
+                return await self.analyze_single_async(sent, return_details=return_details)
+
+        tasks = [_analyze_one(sent) for sent in sentences]
+        results = await asyncio.gather(*tasks)
+        return list(results)
 
     def _calculate_final_score(self, result: SentimentResult):
         """集成平均法计算最终评分"""

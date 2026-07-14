@@ -3,7 +3,7 @@
 
 包含:
 - 12 家完整示例企业（有语句数据，可用于完整功能演示）
-- ~200 家行业基准企业（只有年度汇总数据，用于行业基准计算）
+- ~200 家行业基准企业（最新一年有语句数据，用于行业基准计算）
 - 2012-2025 共 14 年历史趋势
 
 剔除规则（与论文一致）:
@@ -23,6 +23,7 @@ from app.models.company import Company
 from app.models.analysis import AnalysisRecord
 from app.models.sentence import Sentence
 from app.models.industry import IndustryBenchmark
+from app.services.mock_service import run_mock_analysis, generate_mock_company_text
 
 # 金融类行业（需剔除）
 FINANCIAL_INDUSTRIES = ["银行", "非银金融"]
@@ -124,26 +125,59 @@ def _seed_full_demo_companies(db):
 
         for year_idx, y in enumerate(trend):
             is_latest = (y["year"] == 2025)
-            data_source = "ESG" if y["year"] >= 2023 else "MD&A"
+            data_source = "MD&A"
 
-            # 简单的风险等级（后 20% 为预警，这里先根据 GW 粗略估计）
-            risk_level = "预警" if y["gw"] > 0.15 else "正常"
+            # 生成语句（最新一年）
+            sentences = []
+            summary = None
+            if is_latest:
+                sentences, summary = _generate_demo_sentences(
+                    comp["name"], comp["industry"], y["gw"],
+                    seed_val=hash(comp["code"] + str(y["year"])) % 100000
+                )
+
+            # 最新一年使用 run_mock_analysis 的结果（确保与拉取一致）
+            if summary:
+                total_sentences = summary["total_sentences"]
+                env_sentences = summary["env_sentences"]
+                substantive_count = summary["substantive_count"]
+                descriptive_count = summary["descriptive_count"]
+                non_env_count = summary["non_env_count"]
+                tone_score = summary["tone_score"]
+                industry_median_tone = summary["industry_median_tone"]
+                gw_index = summary["gw_index"]
+                fleiss_kappa = summary["fleiss_kappa"]
+                dispute_count = summary["dispute_count"]
+            else:
+                # 历史年份用估计值（比例与最新年份一致）
+                total_sentences = 100 + idx * 10
+                env_sentences = 30 + idx * 3
+                substantive_count = int(env_sentences * 0.6)
+                descriptive_count = int(env_sentences * 0.32)
+                non_env_count = total_sentences - env_sentences
+                dispute_count = max(1, int(env_sentences * 0.08))
+                tone_score = round(y["tone"], 6)
+                industry_median_tone = 0.58
+                gw_index = round(y["gw"], 6)
+                fleiss_kappa = 0.84
+
+            risk_level = "预警" if gw_index > 0.15 else "正常"
 
             record = AnalysisRecord(
                 company_id=company.id,
                 year=y["year"],
                 data_source_type=data_source,
-                total_sentences=100 + idx * 10,
-                env_sentences=30 + idx * 3,
-                substantive_count=10 + idx,
-                descriptive_count=15 + idx * 2,
-                non_env_count=5,
-                tone_score=round(y["tone"], 6),
-                industry_median_tone=0.58,
-                gw_index=round(y["gw"], 6),
+                total_sentences=total_sentences,
+                env_sentences=env_sentences,
+                substantive_count=substantive_count,
+                descriptive_count=descriptive_count,
+                non_env_count=non_env_count,
+                tone_score=tone_score,
+                industry_median_tone=industry_median_tone,
+                gw_index=gw_index,
                 risk_level=risk_level,
-                fleiss_kappa=0.84,
-                dispute_count=2,
+                fleiss_kappa=fleiss_kappa,
+                dispute_count=dispute_count,
                 analysis_status="completed",
                 is_latest=is_latest,
                 analyzed_at=None,
@@ -151,9 +185,8 @@ def _seed_full_demo_companies(db):
             db.add(record)
             db.flush()
 
-            # 只有最新一年生成语句数据（避免数据库太大）
-            if is_latest:
-                sentences = _generate_demo_sentences(comp["name"], comp["base_gw"])
+            # 最新一年写入语句数据
+            if is_latest and sentences:
                 for s_idx, s in enumerate(sentences):
                     sentence = Sentence(
                         analysis_record_id=record.id,
@@ -166,7 +199,7 @@ def _seed_full_demo_companies(db):
                         vote_type=s["vote_type"],
                         confidence=s["confidence"],
                         sentiment_score=s["sentiment"],
-                        sentiment_std=0.05,
+                        sentiment_std=s["sentiment_std"],
                         needs_review=s["needs_review"],
                     )
                     db.add(sentence)
@@ -174,75 +207,55 @@ def _seed_full_demo_companies(db):
     db.commit()
 
 
-def _generate_demo_sentences(company_name: str, gw: float) -> list[dict]:
-    """生成演示语句数据"""
-    sentences = [
-        {
-            "text": f"{company_name}高度重视环境保护工作，积极践行绿色发展理念。",
-            "deepseek": "descriptive", "qwen": "descriptive", "glm": "descriptive",
-            "final": "descriptive", "vote_type": "unanimous",
-            "confidence": 0.95, "sentiment": 0.7, "needs_review": False,
-        },
-        {
-            "text": "报告期内公司环保投入达到5000万元，同比增长15%。",
-            "deepseek": "substantive", "qwen": "substantive", "glm": "substantive",
-            "final": "substantive", "vote_type": "unanimous",
-            "confidence": 0.9, "sentiment": 0.65, "needs_review": False,
-        },
-        {
-            "text": "公司通过ISO14001环境管理体系认证。",
-            "deepseek": "substantive", "qwen": "substantive", "glm": "descriptive",
-            "final": "substantive", "vote_type": "majority",
-            "confidence": 0.7, "sentiment": 0.6, "needs_review": False,
-        },
-        {
-            "text": "二氧化硫排放量减少15%，达到行业领先水平。",
-            "deepseek": "substantive", "qwen": "substantive", "glm": "substantive",
-            "final": "substantive", "vote_type": "unanimous",
-            "confidence": 0.92, "sentiment": 0.75, "needs_review": False,
-        },
-        {
-            "text": "我们持续推动绿色低碳转型，实现可持续发展。",
-            "deepseek": "descriptive", "qwen": "descriptive", "glm": "descriptive",
-            "final": "descriptive", "vote_type": "unanimous",
-            "confidence": 0.98, "sentiment": 0.8, "needs_review": False,
-        },
-        {
-            "text": "报告期内单位产值能耗同比下降4.2%。",
-            "deepseek": "substantive", "qwen": "substantive", "glm": "substantive",
-            "final": "substantive", "vote_type": "unanimous",
-            "confidence": 0.93, "sentiment": 0.7, "needs_review": False,
-        },
-        {
-            "text": "公司致力于打造绿色工厂，践行生态文明理念。",
-            "deepseek": "descriptive", "qwen": "descriptive", "glm": "substantive",
-            "final": "descriptive", "vote_type": "majority",
-            "confidence": 0.65, "sentiment": 0.68, "needs_review": False,
-        },
-        {
-            "text": "清洁能源使用比例提升至12%，碳排放强度降低8.5%。",
-            "deepseek": "substantive", "qwen": "substantive", "glm": "substantive",
-            "final": "substantive", "vote_type": "unanimous",
-            "confidence": 0.91, "sentiment": 0.72, "needs_review": False,
-        },
-        {
-            "text": "公司全年实现营业收入稳步增长，净利润同比增长。",
-            "deepseek": "non_environmental", "qwen": "non_environmental", "glm": "non_environmental",
-            "final": "non_environmental", "vote_type": "unanimous",
-            "confidence": 0.99, "sentiment": 0.5, "needs_review": False,
-        },
-        {
-            "text": "董事会审议通过了年度利润分配方案。",
-            "deepseek": "non_environmental", "qwen": "non_environmental", "glm": "descriptive",
-            "final": "non_environmental", "vote_type": "majority",
-            "confidence": 0.6, "sentiment": 0.5, "needs_review": True,
-        },
-    ]
-    return sentences
+def _generate_demo_sentences(company_name: str, industry: str, gw: float, seed_val: int = 0) -> tuple[list[dict], dict]:
+    """生成演示语句数据（直接调用 run_mock_analysis，确保与拉取数据完全一致）
+    
+    Returns:
+        tuple: (sentences_list, summary_dict)
+            - sentences_list: 语句列表，每个语句是字典格式
+            - summary_dict: 汇总数据（total_sentences, env_sentences, substantive_count等）
+    """
+    # 生成企业特定的模拟文本（根据目标GW调整漂绿程度）
+    text = generate_mock_company_text(company_name, industry, seed=seed_val, target_gw=gw)
+    
+    # 使用 run_mock_analysis 进行分析（与拉取时使用完全相同的逻辑）
+    result = run_mock_analysis(text, industry)
+    
+    # 转换语句格式
+    sentences = []
+    for s in result["sentence_results"]:
+        sentences.append({
+            "text": s["sentence_text"],
+            "deepseek": s["deepseek_result"],
+            "qwen": s["qwen_result"],
+            "glm": s["glm_result"],
+            "final": s["final_category"],
+            "vote_type": s["vote_type"],
+            "confidence": s["confidence"],
+            "sentiment": s["sentiment_score"],
+            "sentiment_std": s["sentiment_std"],
+            "needs_review": s["needs_review"],
+        })
+    
+    # 汇总数据
+    summary = {
+        "total_sentences": result["total_sentences"],
+        "env_sentences": result["env_sentences"],
+        "substantive_count": result["substantive_count"],
+        "descriptive_count": result["descriptive_count"],
+        "non_env_count": result["non_env_count"],
+        "tone_score": result["tone_score"],
+        "industry_median_tone": result["industry_median_tone"],
+        "gw_index": result["gw_index"],
+        "fleiss_kappa": result["fleiss_kappa"],
+        "dispute_count": result["divergence_count"],
+    }
+    
+    return sentences, summary
 
 
 def _seed_benchmark_companies(db):
-    """生成 ~200 家行业基准企业（is_seed=True，只有汇总数据）"""
+    """生成 ~200 家行业基准企业（is_seed=True，最新一年有语句数据）"""
     print("  → 生成 ~200 家行业基准企业（用于行业基准计算）...")
 
     company_count = 0
@@ -292,31 +305,86 @@ def _seed_benchmark_companies(db):
             # 生成 14 年趋势
             trend = _generate_trend(base_gw, seed_val=hash(name) % 100000)
 
-            for y in trend:
+            for y_idx, y in enumerate(trend):
                 is_latest = (y["year"] == 2025)
-                data_source = "ESG" if y["year"] >= 2023 else "MD&A"
-                risk_level = "预警" if y["gw"] > 0.15 else "正常"
+                data_source = "MD&A"
+
+                # 最新一年生成语句数据
+                sentences = []
+                summary = None
+                if is_latest:
+                    sentences, summary = _generate_demo_sentences(
+                        name, industry, y["gw"],
+                        seed_val=hash(stock_code + str(y["year"])) % 100000
+                    )
+
+                # 最新一年使用 run_mock_analysis 的结果（确保与拉取一致）
+                if summary:
+                    total_sentences = summary["total_sentences"]
+                    env_sentences = summary["env_sentences"]
+                    substantive_count = summary["substantive_count"]
+                    descriptive_count = summary["descriptive_count"]
+                    non_env_count = summary["non_env_count"]
+                    tone_score = summary["tone_score"]
+                    industry_median_tone = summary["industry_median_tone"]
+                    gw_index = summary["gw_index"]
+                    fleiss_kappa = summary["fleiss_kappa"]
+                    dispute_count = summary["dispute_count"]
+                else:
+                    # 历史年份用估计值
+                    total_sentences = 80
+                    env_sentences = 25
+                    substantive_count = int(env_sentences * 0.6)
+                    descriptive_count = int(env_sentences * 0.32)
+                    non_env_count = total_sentences - env_sentences
+                    dispute_count = max(1, int(env_sentences * 0.08))
+                    tone_score = round(y["tone"], 6)
+                    industry_median_tone = 0.58
+                    gw_index = round(y["gw"], 6)
+                    fleiss_kappa = 0.82
+
+                risk_level = "预警" if gw_index > 0.15 else "正常"
 
                 record = AnalysisRecord(
                     company_id=company.id,
                     year=y["year"],
                     data_source_type=data_source,
-                    total_sentences=80,
-                    env_sentences=25,
-                    substantive_count=8,
-                    descriptive_count=12,
-                    non_env_count=5,
-                    tone_score=round(y["tone"], 6),
-                    industry_median_tone=0.58,
-                    gw_index=round(y["gw"], 6),
+                    total_sentences=total_sentences,
+                    env_sentences=env_sentences,
+                    substantive_count=substantive_count,
+                    descriptive_count=descriptive_count,
+                    non_env_count=non_env_count,
+                    tone_score=tone_score,
+                    industry_median_tone=industry_median_tone,
+                    gw_index=gw_index,
                     risk_level=risk_level,
-                    fleiss_kappa=0.82,
-                    dispute_count=1,
+                    fleiss_kappa=fleiss_kappa,
+                    dispute_count=dispute_count,
                     analysis_status="completed",
                     is_latest=is_latest,
                     analyzed_at=None,
                 )
                 db.add(record)
+                db.flush()
+
+                # 最新一年写入语句数据
+                if is_latest and sentences:
+                    for s_idx, s in enumerate(sentences):
+                        sentence = Sentence(
+                            analysis_record_id=record.id,
+                            sentence_text=s["text"],
+                            sentence_order=s_idx,
+                            deepseek_result=s["deepseek"],
+                            qwen_result=s["qwen"],
+                            glm_result=s["glm"],
+                            final_category=s["final"],
+                            vote_type=s["vote_type"],
+                            confidence=s["confidence"],
+                            sentiment_score=s["sentiment"],
+                            sentiment_std=s["sentiment_std"],
+                            needs_review=s["needs_review"],
+                        )
+                        db.add(sentence)
 
             company_count += 1
 

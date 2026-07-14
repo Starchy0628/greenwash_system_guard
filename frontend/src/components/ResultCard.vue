@@ -6,7 +6,10 @@
           {{ result?.company_name }}
           <span class="result-code">{{ result?.stock_code }}</span>
         </div>
-        <div class="result-industry">所属行业：{{ result?.industry }}</div>
+        <div class="result-industry">
+          所属行业：{{ result?.industry }}
+          <span v-if="isSampleInsufficient" class="ref-tag" title="行业样本量不足30家，结果仅供参考">参考</span>
+        </div>
       </div>
       <SealTag :show="isWarn" />
     </div>
@@ -16,14 +19,30 @@
       <span class="u">GW 指数</span>
     </div>
 
-    <SentenceList
-      :sentences="confirmedSentences"
-      title="已确权语句"
-    />
+    <div class="metric-row">
+      <div class="metric-item">
+        <div class="mv">{{ result?.substantive_count ?? 0 }}</div>
+        <div class="ml">已确权语句数</div>
+      </div>
+      <div class="metric-item">
+        <div class="mv">{{ result?.env_sentences ?? 0 }}</div>
+        <div class="ml">环境语句数</div>
+      </div>
+      <div class="metric-item">
+        <div class="mv">{{ result?.dispute_count ?? 0 }}</div>
+        <div class="ml">分歧语句数</div>
+      </div>
+      <div class="metric-item">
+        <div class="mv">{{ result?.industry_sample_count ?? 0 }}</div>
+        <div class="ml">行业样本量
+          <span v-if="isSampleInsufficient" class="ref-dot" title="样本量不足30家"></span>
+        </div>
+      </div>
+    </div>
 
     <SentenceList
-      :sentences="disputeSentences"
-      title="待人工复核语句（三模型完全分歧）"
+      :sentences="envSentences"
+      title="环境语句"
     />
 
     <TrendChart :data="trendData" />
@@ -50,12 +69,13 @@ defineEmits(['toggleWatch'])
 
 const isWarn = computed(() => props.result?.risk_level === '预警')
 const gwDisplay = computed(() => props.result?.gw_index?.toFixed(4) ?? '--')
+const isSampleInsufficient = computed(() => {
+  const count = props.result?.industry_sample_count
+  return count !== undefined && count !== null && count < 30
+})
 
-const confirmedSentences = computed(() =>
-  (props.result?.sentences || []).filter(s => !s.needs_review && s.final_category === 'substantive')
-)
-const disputeSentences = computed(() =>
-  (props.result?.sentences || []).filter(s => s.needs_review)
+const envSentences = computed(() =>
+  (props.result?.sentences || []).filter(s => s.final_category !== 'non_env')
 )
 const trendData = computed(() => props.result?.trend || [])
 </script>
@@ -107,6 +127,55 @@ const trendData = computed(() => props.result?.trend || [])
   font-weight: 500;
   color: var(--ink-soft);
   margin-left: 8px;
+}
+
+.ref-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gold);
+  background: rgba(200, 170, 100, 0.15);
+  border: 1px solid rgba(200, 170, 100, 0.4);
+  border-radius: 3px;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 18px 0 20px;
+  padding: 14px;
+  background: var(--ink-soft-2);
+  border-radius: var(--radius);
+}
+.metric-item { text-align: center; }
+.metric-item .mv {
+  font-family: 'Noto Serif SC';
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--jade);
+  font-variant-numeric: tabular-nums;
+}
+.metric-item .ml {
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.ref-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  cursor: help;
 }
 
 .action-row { margin-top: 20px; }

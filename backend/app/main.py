@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import init_db, engine
+from app.core.logging_setup import setup_logging, RequestLoggingMiddleware, get_logger
 from app.api.dashboard import router as dashboard_router
 from app.api.companies import router as companies_router
 from app.api.analysis import router as analysis_router
@@ -20,12 +21,22 @@ from app.api.pdf_analysis import router as pdf_router
 
 settings = get_settings()
 
+logger = get_logger("app")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时初始化数据库"""
+    """启动时初始化数据库和日志"""
+    setup_logging(
+        log_level=settings.log_level,
+        log_dir=str(BASE_DIR.parent / "logs") if settings.debug else None,
+        json_format=False,
+    )
+    logger.info("正在初始化数据库...")
     init_db()
+    logger.info("系统启动完成")
     yield
+    logger.info("系统关闭中...")
 
 
 app = FastAPI(
@@ -35,7 +46,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+app.add_middleware(RequestLoggingMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url, "http://localhost:5173", "http://localhost:3000"],
@@ -44,7 +56,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
 app.include_router(dashboard_router)
 app.include_router(companies_router)
 app.include_router(analysis_router)

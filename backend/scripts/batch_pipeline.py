@@ -110,7 +110,7 @@ def fetch_and_parse_report(company: Company, year: int, use_real_crawler: bool =
             if pdf_bytes and not error:
                 parsed = parse_report_full(pdf_bytes, ann.title if ann else "")
                 text = get_analysis_text(parsed)
-                data_source = parsed.report_type or "ESG"
+                data_source = "MD&A"
                 key_indicators = parsed.key_indicators
                 return text, data_source, key_indicators, None
             else:

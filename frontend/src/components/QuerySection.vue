@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useWatchlistStore } from '../stores/watchlist'
 import { dashboardApi, companiesApi } from '../api'
 import LiveSteps from './LiveSteps.vue'
@@ -123,6 +123,7 @@ async function doSearch(forceRefresh = false) {
 
 async function streamAnalysis(stockCode, forceRefresh = false) {
   let eventSource = null
+  let hasBusinessError = false
 
   try {
     const url = new URL(`/api/analysis/stream`, window.location.origin)
@@ -148,27 +149,51 @@ async function streamAnalysis(stockCode, forceRefresh = false) {
       liveActive.value = false
       searching.value = false
       eventSource.close()
+      scrollToResult()
     })
 
     eventSource.addEventListener('analysis_error', (e) => {
       try {
         const data = JSON.parse(e.data)
-        showToast(data.message, 'error')
+        hasBusinessError = true
+        let msg = data.message
+        if (data.fallback === 'pdf_upload') {
+          msg += '（可切换到 PDF 上传模式手动分析）'
+        }
+        showToast(msg, 'error')
         if (!data.retryable) {
           liveActive.value = false
           searching.value = false
           eventSource.close()
         }
       } catch (err) {
-        showToast('网络连接错误', 'error')
+        hasBusinessError = true
+        showToast('分析失败，请稍后重试', 'error')
         searching.value = false
         liveActive.value = false
         eventSource.close()
       }
     })
 
+    eventSource.addEventListener('done', (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        if (data.status === 'error' && !hasBusinessError) {
+          showToast('分析未能完成，请稍后重试或上传 PDF', 'error')
+        }
+      } catch (err) {
+        // ignore
+      }
+      liveActive.value = false
+      searching.value = false
+      eventSource.close()
+    })
+
     eventSource.onerror = () => {
-      showToast('网络连接错误', 'error')
+      if (hasBusinessError) {
+        return
+      }
+      showToast('网络连接失败，请检查网络后重试', 'error')
       searching.value = false
       liveActive.value = false
       eventSource.close()
@@ -195,6 +220,15 @@ function toggleWatch() {
     watchlistStore.add(stockCode)
     showToast('已加入关注列表')
   }
+}
+
+function scrollToResult() {
+  nextTick(() => {
+    const resultCard = document.querySelector('.result-card')
+    if (resultCard) {
+      resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
 }
 
 function refreshAnalysis() {
