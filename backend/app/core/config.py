@@ -8,6 +8,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # 应用模式
     app_mode: str = "mock"  # mock / real
+    debug: bool = True  # 调试模式（开启时写入日志文件）
 
     # 数据库
     database_url: str = "sqlite:///./data/db/greenwash_guard.db"

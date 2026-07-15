@@ -15,6 +15,8 @@ import json
 import asyncio
 import logging
 import time
+import re
+from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -27,6 +29,11 @@ from app.services.industry_service import compute_industry_benchmarks, update_ri
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.logging_setup import get_request_id
+
+# 本地MD&A数据根目录（与 import_mda_data.py 保持一致）
+MDA_ROOT = Path(r"E:\固定快速访问\下载\CMDA_管理层讨论与分析_ALL")
+MDA_FILE_PATTERN = re.compile(r"^(\d{6})_(.+?)_(\d{4}-\d{2}-\d{2})\.txt$")
+TEXT_SUBDIR = "文本"
 
 logger = logging.getLogger(__name__)
 
@@ -200,9 +207,17 @@ class AnalysisOrchestrator:
                 text = AnalysisOrchestrator._get_mock_text(company, target_gw=target_gw)
                 data_source = "MD&A(Mock降级)"
         else:
-            target_gw = existing.gw_index if existing else None
-            text = AnalysisOrchestrator._get_mock_text(company, target_gw=target_gw)
-            data_source = "MD&A"
+            # mock模式下优先读取本地已导入的真实MD&A文本，找不到才生成mock模板
+            text = AnalysisOrchestrator._get_local_mda_text(company)
+            if text:
+                data_source = "MD&A(本地)"
+                logger.info(
+                    f"mock模式使用本地MD&A文本: {company.stock_code}, 长度={len(text)}"
+                )
+            else:
+                target_gw = existing.gw_index if existing else None
+                text = AnalysisOrchestrator._get_mock_text(company, target_gw=target_gw)
+                data_source = "MD&A(Mock)"
 
         if not text or len(text.strip()) < 50:
             push_fn("analysis_error", {
@@ -511,11 +526,73 @@ class AnalysisOrchestrator:
         }
 
     @staticmethod
+    def _get_local_mda_text(company: Company) -> str:
+        """从本地MD&A数据目录读取该企业最新的MD&A文本
+
+        扫描 MDA_ROOT/年份/文本/ 目录，找到匹配该企业股票代码的最新文件。
+        返回文件内容，若找不到则返回空字符串。
+        """
+        if not company or not company.stock_code:
+            return ""
+        if not MDA_ROOT.exists():
+            logger.warning(f"MD&A根目录不存在: {MDA_ROOT}")
+            return ""
+
+        stock_code = company.stock_code
+        latest_file = None
+        latest_year = 0
+
+        # 扫描所有年份目录
+        for year_dir in sorted(MDA_ROOT.iterdir(), reverse=True):
+            if not year_dir.is_dir():
+                continue
+            try:
+                year = int(year_dir.name)
+            except ValueError:
+                continue
+            text_dir = year_dir / TEXT_SUBDIR
+            if not text_dir.exists():
+                continue
+
+            for f in text_dir.iterdir():
+                if not f.suffix.lower() == ".txt":
+                    continue
+                m = MDA_FILE_PATTERN.match(f.name)
+                if not m:
+                    continue
+                file_code = m.group(1)
+                if file_code == stock_code and year > latest_year:
+                    latest_year = year
+                    latest_file = f
+
+        if latest_file:
+            try:
+                with open(latest_file, "r", encoding="utf-8") as fh:
+                    text = fh.read().strip()
+                logger.info(
+                    f"从本地MD&A读取 [{stock_code}] 最新文本: {latest_file.name} ({len(text)}字符)"
+                )
+                return text
+            except UnicodeDecodeError:
+                with open(latest_file, "r", encoding="gbk") as fh:
+                    text = fh.read().strip()
+                logger.info(
+                    f"从本地MD&A读取 [{stock_code}] 最新文本(gbk): {latest_file.name} ({len(text)}字符)"
+                )
+                return text
+            except Exception as e:
+                logger.warning(f"读取MD&A文件失败 [{latest_file}]: {e}")
+                return ""
+
+        logger.info(f"本地MD&A目录中未找到 [{stock_code}] 的文本")
+        return ""
+
+    @staticmethod
     def _get_mock_text(company: Company = None, target_gw: float = None) -> str:
         """获取模拟文本（企业特定，确保与种子数据一致）"""
         if company:
             return generate_mock_company_text(
-                company.company_name, 
+                company.company_name,
                 company.industry,
                 seed=hash(company.stock_code + str(2025)) % 100000,
                 target_gw=target_gw

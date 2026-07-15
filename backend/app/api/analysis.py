@@ -228,12 +228,15 @@ def _analysis_to_dict(record: AnalysisRecord, include_sentences: bool = False) -
 def _run_analysis_flow(analysis_id: str, company: Company, db_session: Session):
     """后台执行分析流程（阶段式进度更新）"""
     from app.core.database import SessionLocal
+    from app.services.analysis_orchestrator import AnalysisOrchestrator
 
     db = SessionLocal()
     try:
-        # 阶段1: 抓取文本
-        _analysis_progress[analysis_id].update({"step": 0, "status": "running", "message": "抓取企业最新披露文本"})
-        text = MOCK_REPORT_TEXT  # 实际应抓取年报MD&A
+        # 阶段1: 读取本地真实MD&A文本
+        _analysis_progress[analysis_id].update({"step": 0, "status": "running", "message": "读取企业最新MD&A文本"})
+        text = AnalysisOrchestrator._get_local_mda_text(company)
+        if not text:
+            text = MOCK_REPORT_TEXT
 
         # 阶段2: 语句切分与过滤
         _analysis_progress[analysis_id].update({"step": 1, "status": "running", "message": "语句切分与环保相关性过滤"})

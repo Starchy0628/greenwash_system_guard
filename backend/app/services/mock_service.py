@@ -229,10 +229,14 @@ def run_mock_analysis(text: str, industry: str = "白酒") -> dict:
     if not raw_sentences:
         raw_sentences = [text]
 
-    # 2. 环境关键词过滤
+    # 2. 环境关键词过滤（使用强弱关键词策略，同时过滤表格数据）
+    from app.services.text_utils import contains_env_keywords, is_valid_sentence
     env_sentences = []
     for s in raw_sentences:
-        if any(kw in s for kw in ALL_ENV_KEYWORDS):
+        if not is_valid_sentence(s):
+            continue
+        is_env, _ = contains_env_keywords(s)
+        if is_env:
             env_sentences.append(s)
     if not env_sentences:
         env_sentences = raw_sentences
