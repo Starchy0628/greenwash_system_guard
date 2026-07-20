@@ -1,5 +1,5 @@
 # ============================================
-# 企业漂绿测算系统 - Git忽略文件
+# 谛观 GreenwashGuard - Git忽略文件
 # ============================================
 
 # ---- Python 编译缓存 ----
@@ -44,40 +44,23 @@ desktop.ini
 *.log
 logs/
 *.log.*
+launcher.log
 
-# ---- 数据文件（仅排除数据处理产生的原始文本，不要用通配符误伤源码依赖文件） ----
-data/input/
-data/output/*
-!data/output/.gitkeep
-data/raw/
-*.pdf
-*.docx
-*.doc
-data/**/*.txt
-!data/sample/*.txt
-!requirements.txt
-!**/requirements.txt
+# ---- 运行时文件 ----
+.server.pid
+.start_server_temp.py
 
-# ---- 测试覆盖率 ----
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-.hypothesis/
-
-# ---- Streamlit ----
-.streamlit/secrets.toml
-.streamlit/config.toml
-
-# ---- 前端构建产物 ----
+# ---- 前端依赖和构建产物 ----
+# 注意：frontend/dist/ 已预构建，需要保留！
 frontend/node_modules/
-frontend/dist/
+frontend/.vite/
 
 # ---- 数据库文件 ----
 *.db
 *.sqlite
 data/db/
 data/pgdata/
+backend/data/db/
 
 # ---- 批量分析进度 ----
 *_progress*.txt
@@ -88,3 +71,26 @@ temp/
 *.tmp
 *.bak
 *.cache
+
+# ---- 测试覆盖率 ----
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# ---- 大量数据文件（CMDA年报文本，体积大，不提交） ----
+data/CMDA_管理层讨论与分析_ALL/
+data/**/*.txt
+data/readme*.txt
+!backend/data/*.json
+!backend/**/readme.txt
+!frontend/**/readme.txt
+!readme.txt
+!README.md
+!technical_design.md
+
+# ---- PDF/DOC等文档 ----
+*.pdf
+*.docx
+*.doc

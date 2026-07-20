@@ -19,6 +19,7 @@
 - 采用三异构LLM集成推理降低单一模型偏差
 - 计算企业层面"GW漂绿指数"并与同行业基准对比
 - 通过Web界面提供交互式分析、实时进度推送和可视化展示
+- 一键静默启动，无控制台窗口，自动打开浏览器
 
 ### 1.3 核心创新
 
@@ -29,6 +30,8 @@
 | 行业基准动态计算 | 同行业同年份语调中位数作为基准，GW = max(0, 企业语调 - 行业中位数) |
 | SSE实时进度推送 | 分析过程中通过Server-Sent Events推送进度、模型分歧、中间结果 |
 | 熔断降级机制 | LLM API失败时自动熔断，可降级到Mock模式保证体验 |
+| 单端口一体化部署 | 后端直接托管前端静态文件，无需额外Nginx，一个端口搞定 |
+| 静默启动体验 | VBS+pythonw后台启动，无黑框，自动打开浏览器 |
 
 ---
 
@@ -38,13 +41,18 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     前端 (Vue 3)                        │
-│  Vite + Pinia + Naive UI + ECharts + Tailwind CSS       │
-│  SSE EventSource 接收实时进度                           │
+│                     浏览器                                │
+│              访问 http://localhost:8000                   │
 └──────────────────────┬──────────────────────────────────┘
-                       │ HTTP / SSE
+                       │ HTTP / SSE（统一端口）
 ┌──────────────────────▼──────────────────────────────────┐
-│                   后端 (FastAPI)                        │
+│                FastAPI 后端 (单端口 8000)                 │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  /           → 前端静态文件 (Vue 3 SPA)          │   │
+│  │  /assets/*   → JS/CSS/图片等静态资源             │   │
+│  │  /api/*      → 后端API接口                       │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                         │
 │  ┌──────────┐  ┌───────────┐  ┌────────────┐            │
 │  │ API路由层 │  │ 编排服务   │  │ LLM客户端   │            │
 │  │ (REST+SSE)│→│Orchestrator│→│(限流/熔断/重试)│           │
@@ -73,6 +81,7 @@
 
 | 模块 | 路径 | 职责 |
 |------|------|------|
+| 静态文件托管 | `app/main.py` | 托管Vue前端dist产物，SPA fallback路由 |
 | API路由 | `app/api/` | HTTP接口、SSE流式推送、参数校验 |
 | 编排服务 | `app/services/analysis_orchestrator.py` | 核心流程编排、进度回调 |
 | LLM客户端 | `app/services/llm_client.py` | 统一API调用、令牌桶限流、熔断器、指数退避重试 |
@@ -85,6 +94,7 @@
 | PDF解析 | `app/services/pdf_parser.py` | 表格转文本、ESG指标提取、页码定位 |
 | 数据模型 | `app/models/` | SQLAlchemy ORM：Company/AnalysisRecord/Sentence/IndustryBenchmark |
 | 数据校验 | `app/schemas/` | Pydantic v2响应模型 |
+| 启动管理器 | `launcher.py` | 自动检查依赖、初始化数据库、后台启动服务、打开浏览器 |
 | 工具脚本 | `scripts/` | 初始化数据库、种子数据、批量流水线、爬虫 |
 
 ---
@@ -257,27 +267,28 @@ Company (企业)
 
 ## 六、API接口
 
-所有接口前缀 `/api`，统一JSON响应格式。
+所有接口前缀 `/api`，统一JSON响应格式。前端静态文件托管在 `/` 和 `/assets/`。
 
 ### 6.1 核心接口
 
 | 方法 | 路径 | 功能 | SSE |
 |------|------|------|-----|
-| POST | `/analysis/stream/{stock_code}` | 流式分析企业（股票代码） | ✅ |
-| POST | `/pdf/analyze` | PDF上传分析 | ✅ |
-| GET | `/analysis/result/{stock_code}` | 获取分析结果 | |
-| GET | `/dashboard` | 仪表盘汇总数据 | |
-| GET | `/dashboard/top10` | Top10高风险企业 | |
-| GET | `/dashboard/distribution` | GW指数分布 | |
-| GET | `/dashboard/china_map` | 地图数据（按省） | |
-| GET | `/companies/` | 企业列表（搜索/分页） | |
-| GET | `/companies/{code}/trend` | 企业历史趋势 | |
-| GET | `/companies/{code}/sentences` | 语句级分类结果 | |
-| GET | `/watchlist/` | 关注列表 | |
-| POST | `/watchlist/{code}` | 添加关注 | |
-| DELETE | `/watchlist/{code}` | 取消关注 | |
-| GET | `/industries` | 行业列表 | |
+| POST | `/api/analysis/stream/{stock_code}` | 流式分析企业（股票代码） | ✅ |
+| POST | `/api/pdf/analyze` | PDF上传分析 | ✅ |
+| GET | `/api/analysis/result/{stock_code}` | 获取分析结果 | |
+| GET | `/api/dashboard` | 仪表盘汇总数据 | |
+| GET | `/api/dashboard/top10` | Top10高风险企业 | |
+| GET | `/api/dashboard/distribution` | GW指数分布 | |
+| GET | `/api/dashboard/china_map` | 地图数据（按省） | |
+| GET | `/api/companies/` | 企业列表（搜索/分页） | |
+| GET | `/api/companies/{code}/trend` | 企业历史趋势 | |
+| GET | `/api/companies/{code}/sentences` | 语句级分类结果 | |
+| GET | `/api/watchlist/` | 关注列表 | |
+| POST | `/api/watchlist/{code}` | 添加关注 | |
+| DELETE | `/api/watchlist/{code}` | 取消关注 | |
+| GET | `/api/industries` | 行业列表 | |
 | GET | `/health` | 健康检查 | |
+| GET | `/` | 前端首页 | |
 
 ### 6.2 SSE事件类型
 
@@ -331,15 +342,45 @@ App.vue
 - `watchlist`：关注列表（localStorage持久化）
 - `dashboard`：仪表盘汇总数据
 
+### 7.3 构建产物
+
+前端通过 `npm run build` 打包到 `frontend/dist/` 目录，后端启动时自动检测并托管该目录：
+- `/` → 返回 `index.html`
+- `/assets/*` → 返回JS/CSS/图片等静态资源
+- 其他前端路由 → SPA fallback 到 `index.html`
+- `/api/*` → 后端API接口
+
 ---
 
 ## 八、配置与部署
 
-### 8.1 环境变量（backend/.env）
+### 8.1 环境要求
+
+| 软件 | 版本要求 | 说明 |
+|------|---------|------|
+| Python | 3.10+ | 后端运行环境 |
+| pip | 最新版 | Python包管理器 |
+| 浏览器 | Chrome/Edge/Firefox | 访问系统 |
+
+> 注意：Node.js 仅在**重新开发构建前端**时需要，普通使用已包含预构建的dist目录，无需安装Node.js！
+
+### 8.2 一键启动（推荐，Windows）
+
+**双击 `启动系统.vbs`** 即可：
+1. 自动检查Python环境
+2. 自动检查并安装Python依赖（首次运行）
+3. 自动创建.env配置文件（首次运行）
+4. 自动初始化数据库（首次运行）
+5. 后台静默启动服务（无黑框/无控制台窗口）
+6. 等待服务就绪后自动打开浏览器
+
+停止服务：**双击 `停止系统.vbs`**
+
+### 8.3 环境变量（backend/.env）
 
 | 变量 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `APP_MODE` | 否 | `mock` | `mock`(离线演示) / `real`(调用真实LLM) |
+| `APP_MODE` | 否 | `mock` | `mock`(离线演示，无需API Key) / `real`(调用真实LLM) |
 | `DATABASE_URL` | 否 | sqlite:///./data/db/greenwash_guard.db | SQLite或PostgreSQL连接串 |
 | `DEEPSEEK_API_KEY` | real模式 | - | DeepSeek API Key |
 | `DEEPSEEK_BASE_URL` | 否 | https://api.deepseek.com/v1 | |
@@ -348,45 +389,33 @@ App.vue
 | `QWEN_MODEL` | 否 | qwen-max | |
 | `GLM_API_KEY` | real模式 | - | 智谱GLM API Key |
 | `GLM_MODEL` | 否 | glm-4.7 | |
-| `MDA_ROOT` | 否 | (空) | 本地MD&A文本目录绝对路径 |
-| `FRONTEND_URL` | 否 | http://localhost:5173 | CORS允许源 |
+| `MDA_ROOT` | 否 | data/mda | 本地MD&A文本目录路径 |
 | `LOG_LEVEL` | 否 | INFO | 日志级别 |
 
-### 8.2 启动方式
+> 默认使用Mock模式，无需配置任何API Key即可体验完整功能。
 
-**开发模式**：
+### 8.4 开发模式（开发者）
+
 ```bash
-# 后端
+# 后端开发（需要Python 3.10+）
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # 按需填入API Key
+cp .env.example .env
 python -m uvicorn app.main:app --reload --port 8000
 
-# 前端
+# 前端开发（需要Node.js 18+）
 cd frontend
 npm install
-npm run dev
+npm run dev   # 访问 http://localhost:5173，API代理到8000
 ```
 
-访问 http://localhost:5173
+### 8.5 手动启动（无VBS情况）
 
-**生产模式**：
 ```bash
-# 前端构建
-cd frontend && npm run build   # 产物在 dist/
-
-# 后端服务
 cd backend
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
-```
-
-### 8.3 初始化数据库
-
-```bash
-cd backend
-python scripts/init_db.py        # 创建表结构
-python scripts/seed_data.py      # 导入种子演示数据（可选）
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# 然后浏览器访问 http://localhost:8000
 ```
 
 ---
@@ -395,7 +424,7 @@ python scripts/seed_data.py      # 导入种子演示数据（可选）
 
 ```bash
 cd backend
-python -m pytest tests/ -v       # 81个单元测试
+python -m pytest tests/ -v
 ```
 
 测试覆盖：
@@ -428,32 +457,37 @@ python -m pytest tests/ -v       # 81个单元测试
 ## 十一、文件结构（完整）
 
 ```
-greenwash_system/
-├── backend/
+greenwashguard/
+│
+├── 启动系统.vbs                     # ✅ 一键静默启动（推荐）
+├── 停止系统.vbs                     # 停止后台服务
+├── launcher.py                      # 启动管理器（VBS调用此文件）
+├── launcher.log                     # 启动日志（排查问题用）
+│
+├── README.md                        # 项目说明文档
+├── technical_design.md              # 本文档（技术设计）
+├── .gitignore                       # Git忽略规则
+├── .gitattributes                   # Git属性配置
+│
+├── backend/                         # FastAPI 后端
 │   ├── app/
-│   │   ├── main.py                    # FastAPI入口
-│   │   ├── api/
-│   │   │   ├── stream_analysis.py     # SSE流式分析（核心）
-│   │   │   ├── pdf_analysis.py        # PDF上传分析（含自动行业识别）
-│   │   │   ├── dashboard.py           # 仪表盘接口
-│   │   │   ├── companies.py           # 企业查询
-│   │   │   └── watchlist.py           # 关注列表
+│   │   ├── main.py                  # FastAPI入口（含静态文件托管）
+│   │   ├── api/                     # API路由
+│   │   │   ├── stream_analysis.py   # SSE流式分析（核心）
+│   │   │   ├── pdf_analysis.py      # PDF上传分析
+│   │   │   ├── dashboard.py         # 仪表盘接口
+│   │   │   ├── companies.py         # 企业查询
+│   │   │   ├── analysis.py          # 分析结果查询
+│   │   │   └── watchlist.py         # 关注列表
 │   │   ├── core/
-│   │   │   ├── config.py              # Pydantic Settings 环境变量
-│   │   │   ├── database.py            # SQLAlchemy引擎+Session
-│   │   │   ├── utils.py               # sse()格式化等公共函数
-│   │   │   └── logging_setup.py       # 结构化JSON日志
-│   │   ├── models/
-│   │   │   ├── company.py             # 企业模型
-│   │   │   ├── analysis.py            # 分析记录模型
-│   │   │   ├── sentence.py            # 语句结果模型
-│   │   │   └── industry.py            # 行业基准模型
-│   │   ├── schemas/
-│   │   │   ├── __init__.py            # Pydantic响应模型
-│   │   │   ├── company.py
-│   │   │   └── analysis.py
-│   │   └── services/
-│   │       ├── analysis_orchestrator.py  # 🔴分析编排+进度推送
+│   │   │   ├── config.py            # Pydantic Settings 环境变量
+│   │   │   ├── database.py          # SQLAlchemy引擎+Session
+│   │   │   ├── utils.py             # SSE格式化等公共函数
+│   │   │   └── logging_setup.py     # 日志系统
+│   │   ├── models/                  # SQLAlchemy ORM模型
+│   │   ├── schemas/                 # Pydantic数据校验
+│   │   └── services/                # 业务逻辑层
+│   │       ├── analysis_orchestrator.py  # 分析编排+进度推送
 │   │       ├── llm_client.py             # LLM客户端(限流/熔断/重试)
 │   │       ├── classifier.py             # 语句分类器
 │   │       ├── sentiment.py              # 情感分析器
@@ -464,24 +498,25 @@ greenwash_system/
 │   │       ├── text_utils.py             # 分句/关键词/缩尾
 │   │       ├── pdf_parser.py             # PDF解析+表格处理
 │   │       └── cninfo_crawler.py         # 巨潮年报爬虫
-│   ├── scripts/
-│   │   ├── init_db.py                    # 建表
-│   │   ├── seed_data.py                  # 种子演示数据
-│   │   ├── batch_pipeline.py             # 批量分析流水线
-│   │   ├── import_real_mda_sentences.py  # 导入真实MD&A
-│   │   ├── recalculate_medians.py        # 重算行业基准
-│   │   └── test_sse_client.py           # SSE测试客户端
-│   ├── tests/                            # 81个单元测试
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── .env                              # 本地配置(不提交Git)
+│   ├── scripts/                     # 工具脚本
+│   │   ├── init_db.py               # 初始化数据库
+│   │   ├── seed_data.py             # 种子演示数据
+│   │   └── ...
+│   ├── tests/                       # 单元测试
+│   ├── data/                        # 数据文件（行业映射等）
+│   ├── requirements.txt             # Python依赖
+│   ├── .env.example                 # 环境变量模板
+│   └── .env                         # 本地配置(不提交Git)
 │
-├── frontend/
-│   ├── src/
-│   │   ├── api/                          # Axios封装
-│   │   ├── components/                   # Vue组件
-│   │   ├── stores/                       # Pinia状态
-│   │   ├── assets/                       # 静态资源(SVG等)
+├── frontend/                        # Vue 3 前端
+│   ├── dist/                        # ✅ 预构建产物（直接使用，无需Node.js）
+│   │   ├── index.html
+│   │   ├── assets/                  # JS/CSS/图片
+│   │   └── favicon.svg
+│   ├── src/                         # 源代码（开发者用）
+│   │   ├── api/                     # Axios封装
+│   │   ├── components/              # Vue组件
+│   │   ├── stores/                  # Pinia状态
 │   │   ├── App.vue
 │   │   └── main.js
 │   ├── index.html
@@ -489,10 +524,27 @@ greenwash_system/
 │   ├── vite.config.js
 │   └── tailwind.config.js
 │
-├── docs/
-│   ├── technical_design.md              # 本文档
-│   └── POC_VALIDATION_REPORT.md         # POC验证报告
-│
-├── 启动系统.bat                          # Windows一键启动
-└── README.md
+└── data/                            # （可选）本地MD&A文本数据
+    └── CMDA_管理层讨论与分析_ALL/
 ```
+
+### 隐藏文件/文件夹说明
+
+| 名称 | 说明 | 是否需要提交Git | 压缩包是否包含 |
+|------|------|----------------|---------------|
+| `.git/` | Git版本控制目录 | ✅ 自动生成 | ❌ 不要手动压缩（否则会很大） |
+| `.gitignore` | Git忽略规则 | ✅ 需要 | ✅ 需要 |
+| `.gitattributes` | Git属性配置 | ✅ 需要 | ✅ 需要 |
+| `.env` | 本地环境变量（含密钥） | ❌ 已忽略 | ❌ 不要包含 |
+| `.env.example` | 环境变量模板 | ✅ 需要 | ✅ 需要 |
+| `.server.pid` | 运行时PID文件 | ❌ 自动生成 | ❌ 不要包含 |
+| `__pycache__/` | Python字节码缓存 | ❌ 已忽略 | ❌ 不要包含 |
+| `node_modules/` | 前端依赖包 | ❌ 已忽略 | ❌ 不要包含（dist已编译好） |
+| `*.db / *.sqlite` | SQLite数据库文件 | ❌ 已忽略 | ❌ 不要包含（启动时自动创建） |
+| `*.pyc` | Python编译文件 | ❌ 已忽略 | ❌ 不要包含 |
+| `.vscode/` `.idea/` | IDE配置 | ❌ 已忽略 | ❌ 不要包含 |
+| `launcher.log` | 启动日志 | ❌ 运行时生成 | ❌ 不要包含 |
+| `.npmrc` | npm配置 | 可选 | 可选 |
+| `*.txt`（readme_*.txt） | 子目录说明文件 | 可选 | 可选 |
+
+> **压缩包建议**：只保留必要的代码和配置文件，排除 `node_modules/`、`data/` 下的大量txt文件（如需演示数据可保留少量样本）、`__pycache__/`、`*.db`、`.env`、`.git/`、`launcher.log` 等。使用Git归档或 `git archive` 命令可以自动排除这些文件。
